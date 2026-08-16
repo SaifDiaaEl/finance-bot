@@ -2,7 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { getWhatsAppStatus, requestPairingCode } from './services/whatsapp.js';
 import { getAllUsers, getFinancialSummary, getTransactions, updateUserBudget, deleteTransaction, addTransaction, deleteUser } from './lib/db.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -15,8 +14,13 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, '../public')));
 
 // API Routes
-app.get('/api/status', (req, res) => {
-  res.json(getWhatsAppStatus());
+app.get('/api/status', async (req, res) => {
+  try {
+    const { getWhatsAppStatus } = await import('./services/whatsapp.js');
+    res.json(getWhatsAppStatus());
+  } catch (e) {
+    res.json({ status: 'disconnected', qr: null, client: null, note: 'bot not running on this host' });
+  }
 });
 
 app.post('/api/pair', async (req, res) => {
@@ -25,6 +29,7 @@ app.post('/api/pair', async (req, res) => {
     return res.status(400).json({ error: 'Phone number is required' });
   }
   try {
+    const { requestPairingCode } = await import('./services/whatsapp.js');
     const code = await requestPairingCode(phone);
     res.json({ code });
   } catch (e) {

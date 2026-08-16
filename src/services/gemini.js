@@ -6,9 +6,8 @@ dotenv.config();
 const apiKey = process.env.GEMINI_API_KEY;
 if (!apiKey) {
   console.error('❌ GEMINI_API_KEY is not set. Add it to .env or environment variables.');
-  process.exit(1);
 }
-const genAI = new GoogleGenerativeAI(apiKey);
+const genAI = new GoogleGenerativeAI(apiKey || 'missing-key');
 const primaryModel = process.env.GEMINI_MODEL || 'gemini-3.7-flash';
 const fallbackModels = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'];
 

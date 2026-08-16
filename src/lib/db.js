@@ -2,8 +2,10 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
-const connectionString = process.env.DATABASE_URL ||
-  'postgresql://neondb_owner:npg_cDpbzTUZ1tA6@ep-holy-mountain-zatkucvv.c-2.eu-west-2.aws.neon.tech/neondb?sslmode=require';
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  console.error('❌ DATABASE_URL is not set. Add it to .env or environment variables.');
+}
 
 const pool = new Pool({ connectionString });
 
@@ -75,7 +77,11 @@ async function initDb() {
   }
 }
 
-await initDb();
+try {
+  await initDb();
+} catch (e) {
+  console.error('DB init failed (will retry on demand):', e.message);
+}
 
 export async function getUser(phone) {
   let res = await pool.query('SELECT * FROM users WHERE phone = $1', [phone]);

@@ -1,0 +1,9 @@
+node_modules/
+data/
+.env
+*.log
+npm-debug.log*
+.DS_Store
+*.wav
+test.wav
+*.wav

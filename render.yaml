@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: finance-bot
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: BOT_PHONE_NUMBER
+        value: "0000000000"

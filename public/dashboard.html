@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>لوحة التحكم المالية - المساعد الذكي</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen">
+  <!-- Navbar -->
+  <nav class="bg-gray-800 border-b border-gray-700 px-6 py-4 flex justify-between items-center shadow-lg">
+    <div class="flex items-center space-x-3 space-x-reverse">
+      <div class="p-2 bg-emerald-500/20 text-emerald-400 rounded-lg">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+      </div>
+      <span class="text-xl font-bold bg-gradient-to-r from-emerald-400 to-teal-300 bg-clip-text text-transparent">المساعد المالي الذكي</span>
+    </div>
+    <div class="flex items-center gap-4">
+      <select id="userSelect" class="bg-gray-700 border border-gray-600 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-emerald-500">
+        <!-- Users populated dynamically -->
+      </select>
+      <button onclick="deleteUser()" class="px-4 py-1.5 bg-red-600/80 hover:bg-red-600 transition rounded-lg text-sm font-medium text-white">🗑 حذف المستخدم</button>
+      <a href="/" class="px-4 py-1.5 bg-gray-700 hover:bg-gray-600 transition rounded-lg text-sm font-medium">ربط واتساب</a>
+    </div>
+  </nav>
+
+  <!-- Main Container -->
+  <main class="max-w-7xl mx-auto px-6 py-8">
+    <!-- Stats Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+      <div class="bg-gray-800 border border-gray-700 rounded-2xl p-6 shadow-xl">
+        <div class="text-gray-400 text-sm mb-1">الميزانية <span id="statBudgetPeriod"></span></div>
+        <div id="statBudget" class="text-3xl font-extrabold text-white">0 ج.م</div>
+      </div>
+      <div class="bg-gray-800 border border-gray-700 rounded-2xl p-6 shadow-xl">
+        <div class="text-gray-400 text-sm mb-1">إجمالي المصروفات</div>
+        <div id="statExpenses" class="text-3xl font-extrabold text-red-400">0 ج.م</div>
+      </div>
+      <div class="bg-gray-800 border border-gray-700 rounded-2xl p-6 shadow-xl">
+        <div class="text-gray-400 text-sm mb-1">إجمالي الدخل</div>
+        <div id="statIncome" class="text-3xl font-extrabold text-emerald-400">0 ج.م</div>
+      </div>
+      <div class="bg-gray-800 border border-gray-700 rounded-2xl p-6 shadow-xl">
+        <div class="text-gray-400 text-sm mb-1">المتبقي من الميزانية</div>
+        <div id="statRemaining" class="text-3xl font-extrabold text-teal-400">0 ج.م</div>
+      </div>
+    </div>
+
+    <!-- Charts & Quick Action Grid -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-8">
+      <!-- Chart -->
+      <div class="bg-gray-800 border border-gray-700 rounded-2xl p-6 shadow-xl lg:col-span-2 flex flex-col items-center justify-center">
+        <h3 class="text-lg font-bold mb-4 self-start">توزيع المصروفات حسب التصنيف</h3>
+        <div class="w-full max-w-md h-64">
+          <canvas id="expensesChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Quick Actions / Update Budget -->
+      <div class="bg-gray-800 border border-gray-700 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
+        <div>
+          <h3 class="text-lg font-bold mb-4">إعدادات الميزانية</h3>
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm text-gray-400 mb-1">الميزانية الجديدة (ج.م)</label>
+              <input type="number" id="inputNewBudget" class="w-full bg-gray-700 border border-gray-600 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-emerald-500" placeholder="مثال: 6000">
+            </div>
+            <div>
+              <label class="block text-sm text-gray-400 mb-1">فترة الميزانية</label>
+              <select id="inputBudgetPeriod" class="w-full bg-gray-700 border border-gray-600 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-emerald-500">
+                <option value="monthly">شهري</option>
+                <option value="weekly">أسبوعي</option>
+                <option value="daily">يومي</option>
+                <option value="yearly">سنوي</option>
+              </select>
+            </div>
+            <button onclick="updateBudget()" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 transition rounded-xl font-bold shadow-lg shadow-emerald-600/30">
+              حفظ الميزانية
+            </button>
+          </div>
+        </div>
+
+        <div class="mt-6 pt-6 border-t border-gray-700">
+          <h4 class="font-bold text-sm mb-2 text-gray-300">💡 نصيحة ذكية:</h4>
+          <p id="smartTip" class="text-xs text-gray-400 leading-relaxed">أرسل رسالة صوتية أو صورة فاتورة عبر واتساب في أي وقت ليقوم البوت بتسجيلها وتصنيفها تلقائياً.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Transactions Table -->
+    <div class="bg-gray-800 border border-gray-700 rounded-2xl p-6 shadow-xl">
+      <h3 class="text-lg font-bold mb-4">سجل المعاملات المالية</h3>
+      <div class="overflow-x-auto">
+        <table class="w-full text-right">
+          <thead>
+            <tr class="text-gray-400 border-b border-gray-700 text-sm">
+              <th class="pb-3 px-4">رقم الهاتف / المستخدم</th>
+              <th class="pb-3 px-4">النوع</th>
+              <th class="pb-3 px-4">المبلغ</th>
+              <th class="pb-3 px-4">التصنيف</th>
+              <th class="pb-3 px-4">الوصف</th>
+              <th class="pb-3 px-4">التاريخ</th>
+              <th class="pb-3 px-4">إجراء</th>
+            </tr>
+          </thead>
+          <tbody id="transactionsTableBody" class="divide-y divide-gray-700 text-sm">
+            <!-- Populated dynamically -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    let myChart = null;
+    let currentPhone = '';
+
+    async function loadUsers() {
+      const res = await fetch('/api/users');
+      const users = await res.json();
+      const select = document.getElementById('userSelect');
+      select.innerHTML = '';
+      if (users.length === 0) {
+        select.innerHTML = '<option>لا يوجد مستخدمون بعد</option>';
+        return;
+      }
+      users.forEach(u => {
+        const opt = document.createElement('option');
+        opt.value = u.phone;
+        opt.textContent = `${u.name || 'مستخدم'} (${u.phone})`;
+        select.appendChild(opt);
+      });
+      if (users.length > 0) {
+        currentPhone = users[0].phone;
+        select.value = currentPhone;
+        loadDashboardData(currentPhone);
+      }
+
+      select.onchange = (e) => {
+        currentPhone = e.target.value;
+        loadDashboardData(currentPhone);
+      };
+    }
+
+    async function deleteUser() {
+      if (!currentPhone) return;
+      if (!confirm(`هل أنت متأكد من حذف المستخدم ${currentPhone} وكل معاملاته نهائياً؟`)) return;
+      const res = await fetch(`/api/users/${currentPhone}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (res.ok) {
+        alert(`✅ تم حذف المستخدم و ${data.transactionsDeleted || 0} معاملة بنجاح.`);
+        loadUsers();
+      } else {
+        alert('فشل حذف المستخدم: ' + (data.error || 'خطأ غير معروف'));
+      }
+    }
+
+    async function loadDashboardData(phone) {
+      const res = await fetch(`/api/summary?phone=${phone}`);
+      const data = await res.json();
+
+      const periodLabel = data.budgetPeriod === 'daily' ? 'اليومية' : data.budgetPeriod === 'weekly' ? 'الأسبوعية' : data.budgetPeriod === 'yearly' ? 'السنوية' : 'الشهرية';
+      document.getElementById('statBudgetPeriod').textContent = periodLabel;
+      document.getElementById('statBudget').textContent = data.monthlyBudget.toLocaleString() + ' ج.م';
+      document.getElementById('statExpenses').textContent = data.totalExpenses.toLocaleString() + ' ج.م';
+      document.getElementById('statIncome').textContent = data.totalIncome.toLocaleString() + ' ج.م';
+      document.getElementById('statRemaining').textContent = data.remainingBudget.toLocaleString() + ' ج.م';
+      document.getElementById('inputBudgetPeriod').value = data.budgetPeriod || 'monthly';
+
+      // Render Chart
+      const ctx = document.getElementById('expensesChart').getContext('2d');
+      const categories = data.byCategory.map(c => c.category);
+      const totals = data.byCategory.map(c => c.total);
+
+      if (myChart) myChart.destroy();
+      myChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: categories.length ? categories : ['لا توجد مصروفات'],
+          datasets: [{
+            data: totals.length ? totals : [1],
+            backgroundColor: ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#6b7280']
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'bottom', labels: { color: '#d1d5db' } }
+          }
+        }
+      });
+
+      // Load Transactions
+      const txRes = await fetch(`/api/transactions?phone=${phone}`);
+      const txs = await txRes.json();
+      const tbody = document.getElementById('transactionsTableBody');
+      tbody.innerHTML = '';
+
+      if (txs.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="7" class="py-4 text-center text-gray-500">لا توجد معاملات مسجلة بعد</td></tr>`;
+        return;
+      }
+
+      txs.forEach(t => {
+        const isExpense = t.type === 'expense';
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="py-3 px-4">${t.phone}</td>
+          <td class="py-3 px-4"><span class="px-2.5 py-1 rounded-full text-xs font-bold ${isExpense ? 'bg-red-500/20 text-red-400' : 'bg-emerald-500/20 text-emerald-400'}">${isExpense ? 'مصروف' : 'دخل'}</span></td>
+          <td class="py-3 px-4 font-bold ${isExpense ? 'text-red-400' : 'text-emerald-400'}">${t.amount} ج.م</td>
+          <td class="py-3 px-4">${t.category}</td>
+          <td class="py-3 px-4 text-gray-300">${t.description || '-'}</td>
+          <td class="py-3 px-4 text-gray-400">${t.date.substring(0, 10)}</td>
+          <td class="py-3 px-4"><button onclick="deleteTx(${t.id})" class="text-red-400 hover:text-red-300 font-medium text-xs bg-red-500/10 hover:bg-red-500/20 px-2.5 py-1 rounded-lg transition">حذف</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function updateBudget() {
+      const budget = parseFloat(document.getElementById('inputNewBudget').value);
+      if (isNaN(budget) || budget <= 0) {
+        alert('برجاء إدخال مبلغ ميزانية صحيح');
+        return;
+      }
+
+      const period = document.getElementById('inputBudgetPeriod').value;
+
+      const res = await fetch('/api/budget', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone: currentPhone, budget, period })
+      });
+
+      if (res.ok) {
+        alert('تم تحديث الميزانية بنجاح!');
+        loadDashboardData(currentPhone);
+        document.getElementById('inputNewBudget').value = '';
+      } else {
+        alert('حدث خطأ أثناء تحديث الميزانية');
+      }
+    }
+
+    async function deleteTx(id) {
+      if (!confirm('هل أنت متأكد من حذف هذه المعاملة؟')) return;
+      const res = await fetch(`/api/transactions/${id}?phone=${currentPhone}`, { method: 'DELETE' });
+      if (res.ok) {
+        loadDashboardData(currentPhone);
+      } else {
+        alert('فشل حذف المعاملة');
+      }
+    }
+
+    loadUsers();
+    setInterval(() => {
+      if (currentPhone) loadDashboardData(currentPhone);
+    }, 5000);
+  </script>
+</body>
+</html>

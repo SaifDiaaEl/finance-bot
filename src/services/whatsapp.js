@@ -1,18 +1,15 @@
 import { makeWASocket, DisconnectReason, downloadMediaMessage } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
-import qrcode from 'qrcode';
 import qrcodeTerminal from 'qrcode-terminal';
 import path from 'path';
 import fs from 'fs';
 import pino from 'pino';
-import { getUser, addTransaction, deleteTransaction, getFinancialSummary, getTransactions, updateUserBudget } from '../lib/db.js';
+import { getUser, addTransaction, getFinancialSummary, getTransactions, updateUserBudget, getBotSessions, createBotSession, updateBotSessionStatus, deleteBotSession, isMessageProcessed, markMessageProcessed } from '../lib/db.js';
 import { usePgAuthState } from './dbAuth.js';
 import { parseFinancialInput, parseReceiptImage, parseAudioVoice } from './gemini.js';
 
-let sock = null;
-let qrCodeData = null;
-let connectionStatus = 'disconnected';
-let clientInfo = null;
+// Map of running sessions: id -> { id, name, ownerPhone, botPhone, sock, status, qr, client }
+const sessions = new Map();
 
 const logFile = path.resolve(process.cwd(), 'data', 'bot.log');
 const processedMsgIds = new Set();
@@ -27,7 +24,21 @@ function logLine(line) {
   console.log(msg);
 }
 
-async function sendText(jid, text) {
+function makeSession(sess) {
+  return {
+    id: sess.id,
+    name: sess.name || sess.id,
+    ownerPhone: sess.owner_phone || sess.ownerPhone || '',
+    botPhone: sess.bot_phone || sess.botPhone || '',
+    sock: null,
+    status: 'disconnected',
+    qr: null,
+    client: null,
+    failCount: 0
+  };
+}
+
+async function sendText(sock, jid, text) {
   try {
     const sent = await sock.sendMessage(jid, { text });
     if (sent?.key?.id) {
@@ -44,115 +55,201 @@ async function sendText(jid, text) {
   }
 }
 
-export async function startWhatsApp(onQR, onConnected) {
-  const { state, saveCreds } = await usePgAuthState();
+function genSessionId() {
+  return 'bot-' + Math.random().toString(36).slice(2, 6);
+}
 
-  sock = makeWASocket({
+export async function startSession(sess) {
+  const session = sessions.get(sess.id) || makeSession(sess);
+  session.status = 'connecting';
+  session.sock = null;
+
+  const { state, saveCreds } = await usePgAuthState(session.id);
+  const sock = makeWASocket({
     auth: state,
     printQRInTerminal: true,
     logger: pino({ level: 'silent' }),
   });
 
+  session.sock = sock;
+  sessions.set(session.id, session);
+  try { await updateBotSessionStatus(session.id, 'connecting'); } catch {}
+
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
-      qrCodeData = qr;
-      connectionStatus = 'qr_ready';
+      session.qr = qr;
+      session.status = 'qr_ready';
       qrcodeTerminal.generate(qr, { small: true });
-      if (onQR) onQR(qr);
+      try { await updateBotSessionStatus(session.id, 'qr_ready'); } catch {}
     }
 
     if (connection === 'close') {
-      connectionStatus = 'disconnected';
-      qrCodeData = null;
+      session.status = 'disconnected';
+      session.qr = null;
       const shouldReconnect = (lastDisconnect?.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut;
-      logLine('Connection closed due to ' + (lastDisconnect?.error?.message || lastDisconnect?.error || 'unknown') + ', reconnecting: ' + shouldReconnect);
+      logLine(`[${session.id}] Connection closed: ${lastDisconnect?.error?.message || lastDisconnect?.error || 'unknown'} reconnecting=${shouldReconnect}`);
+      try { await updateBotSessionStatus(session.id, 'disconnected'); } catch {}
       if (shouldReconnect) {
-        setTimeout(() => startWhatsApp(onQR, onConnected), 3000);
+        session.failCount++;
+        if (session.failCount <= 10) {
+          logLine(`[${session.id}] Reconnect attempt ${session.failCount}/10`);
+          setTimeout(() => startSession(session), 3000);
+        } else {
+          session.status = 'failed';
+          logLine(`[${session.id}] Giving up reconnecting after ${session.failCount} attempts. Use the pairing page to re-link.`);
+          try { await updateBotSessionStatus(session.id, 'failed'); } catch {}
+        }
       }
     } else if (connection === 'open') {
-      connectionStatus = 'connected';
-      qrCodeData = null;
-      clientInfo = sock.user;
-      logLine('WhatsApp connected successfully as: ' + sock.user?.id);
-      if (onConnected) onConnected(sock.user);
+      session.status = 'connected';
+      session.qr = null;
+      session.failCount = 0;
+      session.client = sock.user;
+      const myId = sock.user?.id || '';
+      session.botPhone = myId.split(':')[0].split('@')[0];
+      logLine(`[${session.id}] WhatsApp connected as ${myId} (owner: ${session.ownerPhone})`);
+      try { await updateBotSessionStatus(session.id, 'connected', session.botPhone); } catch {}
     }
   });
 
   sock.ev.on('creds.update', saveCreds);
 
-  sock.ev.on('connection.update', (update) => {
-    if (update.connection) logLine('[EVT] connection.update -> ' + update.connection + (update.lastDisconnect?.error ? ' err=' + update.lastDisconnect.error.message : ''));
+  sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    await handleMessages(session, messages, type);
   });
 
-  sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    logLine('[EVT] messages.upsert type=' + type + ' count=' + (messages?.length || 0));
-    for (const msg of messages || []) {
-      logLine('[RAW] key=' + JSON.stringify(msg?.key) + ' pushName=' + msg?.pushName + ' msgKeys=' + (msg?.message ? Object.keys(msg.message).join(',') : 'EMPTY'));
-    }
-    if (type !== 'notify' && type !== 'append') return;
+  return session;
+}
 
-    for (const msg of messages) {
-      try {
-      if (!msg.message) {
-        logLine('[SKIP] msg.message is empty. key=' + JSON.stringify(msg.key) + ' type=' + msg.type);
-        continue;
-      }
+export async function startAllSessions() {
+  let list = [];
+  try {
+    list = await getBotSessions();
+  } catch (e) {
+    logLine('getBotSessions failed: ' + e.message);
+  }
+  for (const s of list) {
+    try {
+      await startSession(s);
+    } catch (e) {
+      logLine(`[${s.id}] start error: ${e.message}`);
+    }
+  }
+  return sessions.size;
+}
+
+export async function requestPairingCode(id, { name, phone, botPhone } = {}) {
+  if (process.env.VERCEL) {
+    throw new Error('الربط يتم فقط من localhost:3000 حيث يعمل البوت');
+  }
+  const cleanedBot = String(botPhone || '').replace(/\D/g, '');
+  if (!cleanedBot) throw new Error('رقم البوت مطلوب');
+
+  let session = sessions.get(id);
+  if (!session) {
+    const ownerPhone = String(phone || '').replace(/\D/g, '');
+    if (!ownerPhone) throw new Error('رقم المستخدم مطلوب');
+    await createBotSession({ id, name, ownerPhone, botPhone: cleanedBot });
+    try { await getUser(ownerPhone); } catch {}
+    session = await startSession({ id, name, ownerPhone, botPhone: cleanedBot });
+  } else if (session.status === 'failed' || session.status === 'disconnected') {
+    session.failCount = 0;
+    try { if (session.sock) await session.sock.end(undefined); } catch {}
+    session = await startSession(session);
+  }
+
+  if (!session.sock) throw new Error('WhatsApp socket not initialized');
+  if (session.status === 'connected') throw new Error('هذا البوت متصل بالفعل، لا حاجة لإعادة الربط');
+
+  const code = await session.sock.requestPairingCode(cleanedBot);
+  return code;
+}
+
+export async function removeSession(id) {
+  const session = sessions.get(id);
+  if (session?.sock) {
+    try { await session.sock.logout(); } catch {}
+    try { await session.sock.end(undefined); } catch {}
+  }
+  sessions.delete(id);
+  try { await deleteBotSession(id); } catch {}
+}
+
+export async function getWhatsAppStatus() {
+  let dbSessions = [];
+  try {
+    dbSessions = await getBotSessions();
+  } catch {}
+
+  const merged = dbSessions.map(db => {
+    const r = sessions.get(db.id);
+    return {
+      id: db.id,
+      name: db.name || db.id,
+      ownerPhone: db.owner_phone,
+      botPhone: r?.botPhone || db.bot_phone || '',
+      status: r?.status || 'disconnected',
+      qr: r?.qr || null,
+      client: r?.client ? { id: r.client.id, name: r.client.name } : null
+    };
+  });
+
+  return { sessions: merged };
+}
+
+async function handleMessages(session, messages, type) {
+  const sock = session.sock;
+  const phone = session.ownerPhone; // all data is keyed by the session owner's personal number
+  const myPhone = session.botPhone;
+
+  for (const msg of messages || []) {
+    try {
+      if (!msg.message) continue;
+
+      const msgId = msg.key?.id || '';
+      const remoteJid = msg.key?.remoteJid || '';
+      const fromMe = !!msg.key?.fromMe;
 
       // Only process fresh messages (avoid replaying old history after reconnect)
       const msgTs = msg.messageTimestamp;
       const tsSec = typeof msgTs === 'object' ? Number(msgTs.low || 0) : Number(msgTs || 0);
-      if (tsSec && Date.now() / 1000 - tsSec > 120) {
-        logLine('[SKIP] old message (replayed history): ' + tsSec);
-        continue;
-      }
+      if (tsSec && Date.now() / 1000 - tsSec > 120) continue;
 
-      // Deduplicate: same message may arrive via 'append' and 'notify'
-      const msgId = msg.key?.id || '';
+      // Persistent dedup: same message must never be processed twice (reconnects/restarts)
       if (msgId) {
-        // Skip the bot's own sent replies (self-chat echo)
         if (sentMsgIds.has(msgId)) continue;
         if (processedMsgIds.has(msgId)) continue;
+        const dbKey = session.id + ':' + msgId;
+        try {
+          if (await isMessageProcessed(dbKey)) continue;
+        } catch {}
         processedMsgIds.add(msgId);
-        if (processedMsgIds.size > 500) {
+        if (processedMsgIds.size > 2000) {
           const first = processedMsgIds.values().next().value;
           processedMsgIds.delete(first);
         }
+        try { await markMessageProcessed(dbKey); } catch {}
       }
 
       const messageType = Object.keys(msg.message)[0];
 
-      // Skip bot's own echoed replies (recognizable by the bot's reply prefixes)
-      if (msg.key.fromMe) {
+      // Skip bot's own echoed replies
+      if (fromMe) {
         const txt = (msg.message.conversation || msg.message.extendedTextMessage?.text || '').trim();
         const botPrefix = /^(🎧|🔄|💸|📥|📊|📜|✅|🤖|😅|⚠️|تم تسجيل|عذراً|حدث خطأ)/;
-        if (botPrefix.test(txt) || sentMsgIds.has(msgId)) {
-          logLine('[SKIP] bot self-reply: ' + txt.substring(0, 40));
-          continue;
-        }
+        if (botPrefix.test(txt) || sentMsgIds.has(msgId)) continue;
       }
 
-      const remoteJid = msg.key.remoteJid || '';
-      if (remoteJid.endsWith('@g.us')) continue;
+      if (remoteJid.endsWith('@g.us') || remoteJid.endsWith('@newsletter')) continue;
 
-      // Resolve actual phone number from JID or LID
-      const myId = sock.user?.id || '';
-      const myPhone = myId.split(':')[0].split('@')[0]; // e.g. 201060005533
+      // Only process messages from the owner's own chat (self-chat)
+      const ownerJid = phone + '@s.whatsapp.net';
+      if (remoteJid !== ownerJid && !fromMe) continue;
 
-      let phone;
-      if (msg.key.fromMe) {
-        // Self-chat: user testing by messaging their own linked number
-        phone = myPhone;
-      } else if (remoteJid.endsWith('@s.whatsapp.net') || remoteJid.endsWith('@lid')) {
-        phone = remoteJid.split('@')[0];
-      } else {
-        phone = remoteJid.split('@')[0];
-      }
-
-      // For replies, use the chat JID: if from a real number use its JID, else the bot's own number
-      const replyJid = msg.key.fromMe ? (myPhone + '@s.whatsapp.net') : (remoteJid.endsWith('@lid') ? (phone + '@s.whatsapp.net') : remoteJid);
-
+      // Reply to the sender (or to self-chat using the bot's own number)
+      const replyJid = fromMe ? (myPhone + '@s.whatsapp.net') : (remoteJid.endsWith('@lid') ? (phone + '@s.whatsapp.net') : remoteJid);
       const pushName = msg.pushName || 'صديقي';
 
       await getUser(phone);
@@ -162,8 +259,6 @@ export async function startWhatsApp(onQR, onConnected) {
       let mediaMime = '';
       let isImage = false;
       let isAudio = false;
-
-      logLine(`[MSG] type=${type} messageType=${messageType} from=${phone} fromMe=${msg.key.fromMe}`);
 
       if (messageType === 'conversation') {
         textMessage = msg.message.conversation;
@@ -176,36 +271,35 @@ export async function startWhatsApp(onQR, onConnected) {
           mediaBuffer = await downloadMediaMessage(msg, 'buffer', {}, { logger: pino({ level: 'silent' }) });
           mediaMime = msg.message.imageMessage.mimetype || 'image/jpeg';
         } catch (e) {
-          logLine('Error downloading image: ' + e.message);
+          logLine('[IMG DL ERROR] ' + e.message);
         }
       } else if (messageType === 'audioMessage') {
         isAudio = true;
         try {
           mediaBuffer = await downloadMediaMessage(msg, 'buffer', {}, { logger: pino({ level: 'silent' }) });
           mediaMime = msg.message.audioMessage.mimetype || 'audio/ogg';
-          // WhatsApp voice notes are often audio/mpeg (opus container). Keep original mime for Gemini.
-          logLine('Audio mime: ' + mediaMime + ', size: ' + (mediaBuffer ? mediaBuffer.length : 0));
+          logLine(`[${session.id}] Audio mime: ${mediaMime}, size: ${mediaBuffer ? mediaBuffer.length : 0}`);
         } catch (e) {
-          logLine('Error downloading audio: ' + e.message);
+          logLine('[AUDIO DL ERROR] ' + e.message);
         }
       }
 
+      logLine(`[${session.id}] MSG id=${msgId} type=${type} msgType=${messageType} fromMe=${fromMe} jid=${remoteJid} text=${(textMessage || '[media]').substring(0, 60)}`);
+
       if ((isAudio || isImage) && !mediaBuffer) {
-        await sendText(replyJid, '😅 عذراً، لم أستطع تحميل الوسائط. أرسل الرسالة مرة أخرى أو جرب نصاً مكتوباً.');
+        await sendText(sock, replyJid, '😅 عذراً، لم أستطع تحميل الوسائط. أرسل الرسالة مرة أخرى أو جرب نصاً مكتوباً.');
         continue;
       }
 
       if (!textMessage && !mediaBuffer) continue;
 
-      logLine(`[MSG] Processing from ${phone}: ${textMessage || (isImage ? '[Image]' : '') || (isAudio ? '[Audio]' : '')}`);
-
       let aiResult = null;
 
       if (isImage && mediaBuffer) {
-        await sendText(replyJid, '🔄 جاري قراءة وتحليل الفاتورة بالذكاء الاصطناعي...');
+        await sendText(sock, replyJid, '🔄 جاري قراءة وتحليل الفاتورة بالذكاء الاصطناعي...');
         aiResult = await parseReceiptImage(mediaBuffer, mediaMime);
       } else if (isAudio && mediaBuffer) {
-        await sendText(replyJid, '🎧 جاري الاستماع للرسالة الصوتية وتحليلها...');
+        await sendText(sock, replyJid, '🎧 جاري الاستماع للرسالة الصوتية وتحليلها...');
         aiResult = await parseAudioVoice(mediaBuffer, mediaMime);
       } else if (textMessage) {
         const lower = textMessage.trim().toLowerCase();
@@ -220,7 +314,7 @@ export async function startWhatsApp(onQR, onConnected) {
             `🏷 *المصروفات حسب التصنيف:*\n` +
             (summary.byCategory.length ? summary.byCategory.map(c => `• ${c.category}: ${c.total} ج`).join('\n') : 'لا توجد مصروفات مسجلة بعد.');
 
-          await sendText(replyJid, responseText);
+          await sendText(sock, replyJid, responseText);
           continue;
         }
 
@@ -235,13 +329,12 @@ export async function startWhatsApp(onQR, onConnected) {
               txText += `${i+1}. ${sign} *${t.amount} ج* (${t.category})\n   📝 ${t.description || 'بدون وصف'} - 🕒 ${t.date.substring(0,10)}\n`;
             });
           }
-          await sendText(replyJid, txText);
+          await sendText(sock, replyJid, txText);
           continue;
         }
 
         if (lower.startsWith('ميزانيتي') || lower.startsWith('budget')) {
           const parts = textMessage.trim().split(/\s+/);
-          // Detect period keyword
           let period = null;
           const periodMap = { 'شهري': 'monthly', 'شهريه': 'monthly', 'الشهر': 'monthly', 'شهر': 'monthly',
                              'اسبوعي': 'weekly', 'اسبوعيه': 'weekly', 'الاسبوع': 'weekly', 'أسبوعي': 'weekly', 'أسبوعيه': 'weekly', 'اسبوع': 'weekly',
@@ -251,7 +344,6 @@ export async function startWhatsApp(onQR, onConnected) {
             const key = p.replace(/[0-9.,\u0660-\u0669]/g, '');
             if (periodMap[key]) { period = periodMap[key]; break; }
           }
-          // Find the number (Arabic or Western digits)
           let num = null;
           for (const p of parts) {
             const converted = p.replace(/[٠-٩]/g, d => '٠١٢٣٤٥٦٧٨٩'.indexOf(d));
@@ -261,9 +353,9 @@ export async function startWhatsApp(onQR, onConnected) {
           if (num !== null) {
             await updateUserBudget(phone, num, period);
             const periodName = period ? (period === 'daily' ? 'اليومية' : period === 'weekly' ? 'الأسبوعية' : period === 'yearly' ? 'السنوية' : 'الشهرية') : 'الشهرية';
-            await sendText(replyJid, `✅ تم تحديث ميزانيتك *${periodName}* لتصبح *${num} جنيه*.`);
+            await sendText(sock, replyJid, `✅ تم تحديث ميزانيتك *${periodName}* لتصبح *${num} جنيه*.`);
           } else {
-            await sendText(replyJid, '⚠️ برجاء كتابة المبلغ صحيحاً، مثل: *ميزانيتي 6000* أو *ميزانيتي 3000 اسبوعي*');
+            await sendText(sock, replyJid, '⚠️ برجاء كتابة المبلغ صحيحاً، مثل: *ميزانيتي 6000* أو *ميزانيتي 3000 اسبوعي*');
           }
           continue;
         }
@@ -278,7 +370,7 @@ export async function startWhatsApp(onQR, onConnected) {
             `• *معرفة الرصيد:* اكتب "ملخص" أو "رصيد"\n` +
             `• *آخر العمليات:* اكتب "آخر عمليات"\n` +
             `• *تعديل الميزانية:* اكتب "ميزانيتي 7000"`;
-          await sendText(replyJid, helpText);
+          await sendText(sock, replyJid, helpText);
           continue;
         }
 
@@ -286,7 +378,7 @@ export async function startWhatsApp(onQR, onConnected) {
       }
 
       if (aiResult) {
-        logLine('[AI Result] type=' + aiResult.type + ' amount=' + aiResult.amount + ' category=' + aiResult.category);
+        logLine(`[${session.id}] AI RESULT type=${aiResult.type} amount=${aiResult.amount} category=${aiResult.category} reply=${(aiResult.replyMessage || '').substring(0, 40)}`);
         if (aiResult.type === 'expense' || aiResult.type === 'income') {
           await addTransaction(phone, {
             type: aiResult.type,
@@ -302,36 +394,18 @@ export async function startWhatsApp(onQR, onConnected) {
             `🏷 التصنيف: *${aiResult.category}*\n` +
             `💰 المتبقي من ميزانيتك: *${summary.remainingBudget} جنيه*`;
 
-          await sendText(replyJid, confirmText);
+          await sendText(sock, replyJid, confirmText);
         } else {
-          await sendText(replyJid, aiResult.replyMessage || 'أهلاً بك! يمكنك إرسال مصاريفك أو صور الفواتير أو الفويسات لتسجيلها.');
+          await sendText(sock, replyJid, aiResult.replyMessage || 'أهلاً بك! يمكنك إرسال مصاريفك أو صور الفواتير أو الفويسات لتسجيلها.');
         }
       } else {
-        await sendText(replyJid, 'عذراً، لم أستطع فهم رسالتك. جرب كتابة "مساعدة" لمعرفة طريقة الاستخدام.');
+        await sendText(sock, replyJid, 'عذراً، لم أستطع فهم رسالتك. جرب كتابة "مساعدة" لمعرفة طريقة الاستخدام.');
       }
-      } catch (err) {
-        logLine('[MSG ERROR] ' + err.message);
-        try {
-          await sendText(replyJid, '😅 حدث خطأ أثناء معالجة رسالتك. حاول مرة أخرى.');
-        } catch {}
-      }
+    } catch (err) {
+      logLine('[MSG ERROR] ' + err.message);
+      try {
+        await sendText(sock, '😅 حدث خطأ أثناء معالجة رسالتك. حاول مرة أخرى.');
+      } catch {}
     }
-  });
-
-  return sock;
-}
-
-export async function requestPairingCode(phoneNumber) {
-  if (!sock) throw new Error('WhatsApp socket not initialized');
-  const cleaned = phoneNumber.replace(/\D/g, '');
-  const code = await sock.requestPairingCode(cleaned);
-  return code;
-}
-
-export function getWhatsAppStatus() {
-  return {
-    status: connectionStatus,
-    qr: qrCodeData,
-    client: clientInfo ? { id: clientInfo.id, name: clientInfo.name } : null
-  };
+  }
 }

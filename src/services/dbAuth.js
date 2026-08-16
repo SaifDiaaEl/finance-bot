@@ -5,9 +5,11 @@ import { authStateGet, authStateSet, authStateRemove } from '../lib/db.js';
 
 const fixFileName = (file) => file?.replace(/\//g, '__')?.replace(/:/g, '-');
 
-export async function usePgAuthState() {
+export async function usePgAuthState(prefix = '') {
+  const P = prefix ? prefix + '/' : '';
+
   const readData = async (key) => {
-    const raw = await authStateGet(fixFileName(key));
+    const raw = await authStateGet(P + fixFileName(key));
     if (!raw) return null;
     try {
       return JSON.parse(raw, BufferJSON.reviver);
@@ -17,10 +19,11 @@ export async function usePgAuthState() {
   };
 
   const writeData = async (key, data) => {
+    const dbKey = P + fixFileName(key);
     if (data === undefined) {
-      await authStateRemove(fixFileName(key));
+      await authStateRemove(dbKey);
     } else {
-      await authStateSet(fixFileName(key), JSON.stringify(data, BufferJSON.replacer));
+      await authStateSet(dbKey, JSON.stringify(data, BufferJSON.replacer));
     }
   };
 

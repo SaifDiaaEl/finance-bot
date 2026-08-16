@@ -3,102 +3,184 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ربط واتساب برقم الهاتف - المساعد المالي الذكي</title>
+  <title>إدارة بوتات الأسرة - المساعد المالي الذكي</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-gradient-to-br from-emerald-900 via-gray-900 to-black min-h-screen text-white flex flex-col items-center justify-center p-6">
-  <div class="max-w-md w-full bg-gray-800/80 backdrop-blur-md rounded-2xl p-8 shadow-2xl border border-emerald-500/35 text-center">
-    <div class="inline-flex p-3 bg-emerald-500/20 rounded-full text-emerald-400 mb-4">
-      <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
-    </div>
-    <h1 class="text-2xl font-bold mb-2">ربط واتساب برقم الهاتف</h1>
-    <p class="text-gray-400 text-sm mb-6">ادخل رقم هاتفك المرتبط بواتساب (مع كود الدولة مثل 2010xxxxxxxx) للحصول على رمز الربط السريع.</p>
-
-    <div id="statusBox" class="mb-6 p-3 rounded-lg bg-yellow-500/20 text-yellow-300 font-medium text-sm">
-      ⏳ جاري الاتصال بخدمة واتساب...
-    </div>
-
-    <div id="pairForm" class="space-y-4 mb-6 hidden">
-      <input type="text" id="phoneInput" placeholder="مثال: 201012345678" class="w-full bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 text-white text-center text-lg focus:outline-none focus:border-emerald-500 font-mono">
-      <button onclick="requestPairCode()" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 transition rounded-xl font-bold shadow-lg shadow-emerald-600/30 text-white">
-        الحصول على رمز الربط 🔑
-      </button>
+<body class="bg-gradient-to-br from-emerald-900 via-gray-900 to-black min-h-screen text-white p-6">
+  <div class="max-w-3xl mx-auto">
+    <div class="text-center mb-8">
+      <div class="inline-flex p-3 bg-emerald-500/20 rounded-full text-emerald-400 mb-4">
+        <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+      </div>
+      <h1 class="text-3xl font-bold mb-2">إدارة بوتات الأسرة 👨‍👩‍👧‍👦</h1>
+      <p class="text-gray-400 text-sm">كل فرد من الأسرة له بوت خاص برقم واتساب مستقل، ومصاريفه خاصة بيه لوحده.</p>
+      <a href="/dashboard.html" class="inline-block mt-3 text-emerald-400 hover:text-emerald-300 text-sm font-medium">الانتقال إلى اللوحة 📊</a>
     </div>
 
-    <div id="codeResult" class="hidden mb-6 p-6 bg-gray-900 border border-emerald-500/50 rounded-2xl">
-      <div class="text-gray-400 text-xs mb-2">رمز الربط الخاص بك (أدخل هذا الرمز في إشعارات واتساب):</div>
-      <div id="pairingCodeDisplay" class="text-3xl font-extrabold tracking-widest text-emerald-400 font-mono">--------</div>
-      <p class="text-xs text-gray-400 mt-4 leading-relaxed">
-        الطريقة:<br>
-        1. افتح واتساب على هاتفك ⬅️ الأجهزة المرتبطة ⬅️ ربط جهاز.<br>
-        2. اختر "ربط برقم الهاتف بدلاً من ذلك".<br>
-        3. اكتب الرمز الظاهر أعلاه.
-      </p>
+    <!-- Sessions Status -->
+    <div class="bg-gray-800/80 backdrop-blur-md rounded-2xl p-6 shadow-2xl border border-emerald-500/35 mb-8">
+      <h2 class="text-xl font-bold mb-4">البوتات المسجلة</h2>
+      <div id="sessionsList" class="space-y-3">
+        <div class="text-gray-400 text-sm text-center py-6">⏳ جاري تحميل البوتات...</div>
+      </div>
     </div>
 
-    <div id="connectedBox" class="hidden flex flex-col items-center">
-      <div class="text-emerald-400 font-bold text-lg mb-4">✅ تم الاتصال بنجاح بواتساب!</div>
-      <a href="/dashboard.html" class="w-full py-3 px-6 bg-emerald-600 hover:bg-emerald-500 transition rounded-xl font-bold shadow-lg shadow-emerald-600/30 text-white">
-        الانتقال إلى لوحة التحكم المالية 📊
-      </a>
+    <!-- Add New Bot -->
+    <div class="bg-gray-800/80 backdrop-blur-md rounded-2xl p-6 shadow-2xl border border-emerald-500/35">
+      <h2 class="text-xl font-bold mb-1">إضافة بوت جديد لفرد</h2>
+      <p class="text-gray-400 text-xs mb-6 leading-relaxed">كل فرد يربط البوت برقمه الشخصي (مثل ربط WhatsApp Web) ويبعت مصاريفه في "رسالة لنفسك" — يفضل خاص بينه وبين نفسه، وموبايله شغال عادي.</p>
+
+      <div class="space-y-4">
+        <div>
+          <label class="block text-sm text-gray-300 mb-1">اسم الفرد (مثال: ماما، بابا، أخويا)</label>
+          <input type="text" id="inputName" placeholder="مثال: ماما" class="w-full bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500">
+        </div>
+        <div>
+          <label class="block text-sm text-gray-300 mb-1">رقم الفرد (اللي هيدخل بيه اللوحة + هيبقى عليه البوت)</label>
+          <input type="text" id="inputOwnerPhone" dir="ltr" placeholder="مثال: 01012345678" class="w-full bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 text-white text-center focus:outline-none focus:border-emerald-500 font-mono">
+          <p class="text-gray-500 text-xs mt-1">مع كود الدولة مثل <span dir="ltr">201012345678</span></p>
+        </div>
+        <div>
+          <label class="block text-sm text-gray-300 mb-1">رقم مختلف للبوت (اختياري — اتركه فاضي لاستخدام رقم الفرد نفسه)</label>
+          <input type="text" id="inputBotPhone" dir="ltr" placeholder="فاضي = نفس رقم الفرد" class="w-full bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 text-white text-center focus:outline-none focus:border-emerald-500 font-mono">
+        </div>
+        <button onclick="addBot()" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 transition rounded-xl font-bold shadow-lg shadow-emerald-600/30 text-white">
+          الحصول على رمز الربط 🔑
+        </button>
+      </div>
+
+      <div id="statusBox" class="hidden mt-4 p-3 rounded-lg text-sm font-medium"></div>
+
+      <div id="codeResult" class="hidden mt-6 p-6 bg-gray-900 border border-emerald-500/50 rounded-2xl text-center">
+        <div class="text-gray-400 text-xs mb-2">رمز الربط الخاص بالبوت (أدخله في إشعارات واتساب على رقم البوت):</div>
+        <div id="pairingCodeDisplay" class="text-4xl font-extrabold tracking-widest text-emerald-400 font-mono">--------</div>
+        <p class="text-xs text-gray-400 mt-4 leading-relaxed text-right">
+          الطريقة على موبايل الفرد نفسه:<br>
+          1. افتح واتساب ⬅️ الأجهزة المرتبطة ⬅️ ربط جهاز.<br>
+          2. اختر "ربط برقم الهاتف بدلاً من ذلك".<br>
+          3. اكتب الرمز الظاهر أعلاه (موبايله يفضل شغال عادي).<br>
+          4. بعد الربط: افتح "رسالة لنفسك" واكتب مصاريفك، مثال: <span dir="rtl">صرفت 50 جنيه اكل</span>
+        </p>
+      </div>
     </div>
   </div>
 
   <script>
-    async function checkStatus() {
+    let statuses = [];
+
+    async function loadStatus() {
       try {
         const res = await fetch('/api/status');
-        const data = await res.json();
-        const statusBox = document.getElementById('statusBox');
-        const pairForm = document.getElementById('pairForm');
-        const connectedBox = document.getElementById('connectedBox');
-
-        if (data.status === 'connected') {
-          statusBox.classList.add('hidden');
-          pairForm.classList.add('hidden');
-          document.getElementById('codeResult').classList.add('hidden');
-          connectedBox.classList.remove('hidden');
-        } else {
-          statusBox.textContent = '🟢 النظام جاهز. ادخل رقم هاتفك أدناه للربط:';
-          statusBox.className = 'mb-6 p-3 rounded-lg bg-emerald-500/20 text-emerald-300 font-medium text-sm';
-          pairForm.classList.remove('hidden');
-        }
+        statuses = (await res.json()).sessions || [];
+        renderSessions();
       } catch (e) {
-        console.error(e);
+        document.getElementById('sessionsList').innerHTML = '<div class="text-red-400 text-sm text-center py-6">فشل تحميل الحالة</div>';
       }
     }
 
-    async function requestPairCode() {
-      const phone = document.getElementById('phoneInput').value.trim();
-      if (!phone) {
-        alert('برجاء إدخال رقم الهاتف مع كود الدولة');
+    function statusBadge(s) {
+      const map = {
+        connected: 'bg-emerald-500/20 text-emerald-400',
+        connecting: 'bg-yellow-500/20 text-yellow-300',
+        qr_ready: 'bg-blue-500/20 text-blue-400',
+        disconnected: 'bg-red-500/20 text-red-400'
+      };
+      const labels = {
+        connected: '✅ متصل',
+        connecting: '⏳ جاري الاتصال',
+        qr_ready: '📱 بانتظار رمز الربط',
+        disconnected: '🔌 غير متصل'
+      };
+      return `<span class="px-2.5 py-1 rounded-full text-xs font-bold ${map[s.status] || 'bg-gray-500/20 text-gray-400'}">${labels[s.status] || s.status}</span>`;
+    }
+
+    function renderSessions() {
+      const list = document.getElementById('sessionsList');
+      if (statuses.length === 0) {
+        list.innerHTML = '<div class="text-gray-400 text-sm text-center py-6">لا توجد بوتات بعد — أضف أول بوت من الأسفل.</div>';
         return;
       }
+      list.innerHTML = statuses.map(s => `
+        <div class="flex items-center justify-between bg-gray-900/60 border border-gray-700 rounded-xl px-4 py-3">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-lg">${(s.name || '؟')[0]}</div>
+            <div>
+              <div class="font-bold">${s.name} <span class="text-gray-500 font-normal text-xs">(${s.id})</span></div>
+              <div class="text-xs text-gray-400" dir="ltr">👤 ${s.ownerPhone} ${s.botPhone ? '| 🤖 ' + s.botPhone : ''}</div>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            ${statusBadge(s)}
+            ${s.status !== 'connected' ? `<button onclick="rePair('${s.id}', '${s.name}', '${s.ownerPhone}', '${s.botPhone}')" class="px-3 py-1.5 bg-blue-600/80 hover:bg-blue-600 rounded-lg text-xs font-medium transition">إعادة ربط</button>` : ''}
+            <button onclick="removeBot('${s.id}')" class="px-3 py-1.5 bg-red-600/80 hover:bg-red-600 rounded-lg text-xs font-medium transition">حذف</button>
+          </div>
+        </div>
+      `).join('');
+    }
 
-      const statusBox = document.getElementById('statusBox');
-      statusBox.textContent = '⏳ جاري طلب رمز الربط من واتساب...';
+    function showStatus(msg, ok = true) {
+      const box = document.getElementById('statusBox');
+      box.classList.remove('hidden');
+      box.textContent = msg;
+      box.className = 'mt-4 p-3 rounded-lg text-sm font-medium ' + (ok ? 'bg-emerald-500/20 text-emerald-300' : 'bg-red-500/20 text-red-300');
+    }
 
+    async function addBot() {
+      const name = document.getElementById('inputName').value.trim();
+      const phone = document.getElementById('inputOwnerPhone').value.trim();
+      const botPhone = document.getElementById('inputBotPhone').value.trim();
+      if (!name || !phone) {
+        showStatus('برجاء إدخال الاسم ورقم الفرد', false);
+        return;
+      }
+      const id = 'bot-' + Math.random().toString(36).slice(2, 6);
+      await doPair(id, name, phone, botPhone || phone);
+    }
+
+    async function rePair(id, name, ownerPhone, botPhone) {
+      await doPair(id, name, ownerPhone, botPhone);
+    }
+
+    async function doPair(id, name, phone, botPhone) {
+      document.getElementById('codeResult').classList.add('hidden');
+      showStatus('⏳ جاري طلب رمز الربط من واتساب...');
       try {
         const res = await fetch('/api/pair', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone })
+          body: JSON.stringify({ id, name, phone, botPhone })
         });
         const data = await res.json();
         if (data.code) {
           document.getElementById('pairingCodeDisplay').textContent = data.code;
           document.getElementById('codeResult').classList.remove('hidden');
-          statusBox.textContent = '🔑 تم إنشاء رمز الربط بنجاح!';
+          showStatus('🔑 تم إنشاء رمز الربط بنجاح!');
+          setTimeout(loadStatus, 3000);
         } else {
-          alert('فشل توليد رمز الربط: ' + (data.error || 'خطأ غير معروف'));
+          showStatus('فشل: ' + (data.error || 'خطأ غير معروف'), false);
         }
       } catch (e) {
-        alert('حدث خطأ في الاتصال بالخادم');
+        showStatus('حدث خطأ في الاتصال بالخادم', false);
       }
     }
 
-    setInterval(checkStatus, 5000);
-    checkStatus();
+    async function removeBot(id) {
+      if (!confirm('حذف هذا البوت وكل بيانات ربطه نهائياً؟ (لن تُحذف مصاريف الفرد)')) return;
+      try {
+        const res = await fetch(`/api/sessions/${id}`, { method: 'DELETE' });
+        if (res.ok) {
+          showStatus('✅ تم حذف البوت');
+          loadStatus();
+        } else {
+          showStatus('فشل الحذف', false);
+        }
+      } catch (e) {
+        showStatus('فشل الحذف', false);
+      }
+    }
+
+    setInterval(loadStatus, 5000);
+    loadStatus();
   </script>
 </body>
 </html>

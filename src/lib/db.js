@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import pg from 'pg';
 
 const { Pool } = pg;
@@ -51,6 +52,33 @@ async function initDb() {
       value TEXT NOT NULL
     )
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS bot_sessions (
+      id TEXT PRIMARY KEY,
+      name TEXT,
+      owner_phone TEXT NOT NULL,
+      bot_phone TEXT,
+      status TEXT DEFAULT 'disconnected',
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS processed_messages (
+      msg_key TEXT PRIMARY KEY,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Migrate legacy single-bot auth (unprefixed keys) into a named session
+  const legacyAuth = await pool.query("SELECT count(*)::int AS c FROM whatsapp_auth WHERE key NOT LIKE '%/%'");
+  if (legacyAuth.rows[0].c > 0) {
+    await pool.query(
+      "INSERT INTO bot_sessions (id, name, owner_phone, bot_phone) VALUES ('sowrd', 'Eng Sowrd', '201060005533', '201060005533') ON CONFLICT (id) DO NOTHING"
+    );
+    await pool.query("UPDATE whatsapp_auth SET key = 'sowrd/' || key WHERE key NOT LIKE '%/%'");
+  }
 
   const userCols = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'users'");
   if (!userCols.rows.some(r => r.column_name === 'budget_period')) {
@@ -232,6 +260,56 @@ export async function deleteUser(phone) {
   const res = await pool.query('DELETE FROM transactions WHERE phone = $1', [phone]);
   const res2 = await pool.query('DELETE FROM users WHERE phone = $1', [phone]);
   return { transactionsDeleted: res.rowCount, userDeleted: res2.rowCount };
+}
+
+export async function getBotSessions() {
+  const res = await pool.query('SELECT * FROM bot_sessions ORDER BY created_at ASC');
+  return res.rows;
+}
+
+export async function getBotSession(id) {
+  const res = await pool.query('SELECT * FROM bot_sessions WHERE id = $1', [id]);
+  return res.rows[0] || null;
+}
+
+export async function createBotSession({ id, name, ownerPhone, botPhone = '' }) {
+  await pool.query(
+    `INSERT INTO bot_sessions (id, name, owner_phone, bot_phone) VALUES ($1, $2, $3, $4)
+     ON CONFLICT (id) DO UPDATE SET
+       name = EXCLUDED.name,
+       owner_phone = EXCLUDED.owner_phone,
+       bot_phone = COALESCE(NULLIF(EXCLUDED.bot_phone, ''), bot_sessions.bot_phone)`,
+    [id, name, ownerPhone, botPhone]
+  );
+}
+
+export async function updateBotSessionStatus(id, status, botPhone = null) {
+  if (botPhone) {
+    await pool.query('UPDATE bot_sessions SET status = $1, bot_phone = $2 WHERE id = $3', [status, botPhone, id]);
+  } else {
+    await pool.query('UPDATE bot_sessions SET status = $1 WHERE id = $2', [status, id]);
+  }
+}
+
+export async function deleteBotSession(id) {
+  await pool.query('DELETE FROM bot_sessions WHERE id = $1', [id]);
+  await pool.query("DELETE FROM whatsapp_auth WHERE key LIKE $1", [id + '/%']);
+}
+
+export async function isMessageProcessed(msgKey) {
+  const res = await pool.query('SELECT 1 FROM processed_messages WHERE msg_key = $1', [msgKey]);
+  return res.rows.length > 0;
+}
+
+export async function markMessageProcessed(msgKey) {
+  await pool.query(
+    'INSERT INTO processed_messages (msg_key) VALUES ($1) ON CONFLICT (msg_key) DO NOTHING',
+    [msgKey]
+  );
+}
+
+export async function cleanupOldProcessedMessages(hours = 24) {
+  await pool.query('DELETE FROM processed_messages WHERE created_at < NOW() - ($1 || \' hours\')::interval', [hours]);
 }
 
 export default pool;

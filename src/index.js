@@ -1,6 +1,6 @@
 import dotenv from 'dotenv';
 import app from './app.js';
-import { startWhatsApp } from './services/whatsapp.js';
+import { startAllSessions } from './services/whatsapp.js';
 
 dotenv.config();
 
@@ -11,7 +11,8 @@ app.listen(PORT, async () => {
   console.log(`📱 Starting WhatsApp engine...`);
 
   try {
-    await startWhatsApp();
+    const count = await startAllSessions();
+    console.log(`✅ ${count} bot session(s) started.`);
   } catch (err) {
     console.error('WhatsApp Bot Error:', err);
   }

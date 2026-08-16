@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { getAllUsers, getFinancialSummary, getTransactions, updateUserBudget, deleteTransaction, addTransaction, deleteUser } from './lib/db.js';
+import { getAllUsers, getFinancialSummary, getTransactions, updateUserBudget, deleteTransaction, addTransaction, deleteUser, getBotSessions, deleteBotSession } from './lib/db.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,25 +13,59 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '../public')));
 
+// On Vercel (family-facing), go straight to the dashboard.
+// The pairing page is only for the admin connecting the bot locally.
+app.get('/', (req, res) => {
+  if (process.env.VERCEL) {
+    return res.redirect('/dashboard.html');
+  }
+  res.sendFile(path.join(__dirname, '../public/index.html'));
+});
+
 // API Routes
 app.get('/api/status', async (req, res) => {
   try {
     const { getWhatsAppStatus } = await import('./services/whatsapp.js');
-    res.json(getWhatsAppStatus());
+    res.json(await getWhatsAppStatus());
   } catch (e) {
-    res.json({ status: 'disconnected', qr: null, client: null, note: 'bot not running on this host' });
+    res.json({ sessions: [], note: 'bot not running on this host', error: e.message });
   }
 });
 
 app.post('/api/pair', async (req, res) => {
-  const { phone } = req.body;
-  if (!phone) {
-    return res.status(400).json({ error: 'Phone number is required' });
+  const { id, name, phone, botPhone } = req.body;
+  if (!id || !phone) {
+    return res.status(400).json({ error: 'id and phone (owner) are required' });
   }
   try {
     const { requestPairingCode } = await import('./services/whatsapp.js');
-    const code = await requestPairingCode(phone);
+    // If no dedicated bot number provided, link the person's own number (self-chat flow)
+    const targetBot = (botPhone && String(botPhone).trim()) || String(phone).trim();
+    const code = await requestPairingCode(String(id).trim(), {
+      name: String(name || '').trim(),
+      phone: String(phone).trim(),
+      botPhone: targetBot
+    });
     res.json({ code });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/sessions', async (req, res) => {
+  try {
+    const sessions = await getBotSessions();
+    res.json(sessions);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete('/api/sessions/:id', async (req, res) => {
+  try {
+    const { removeSession } = await import('./services/whatsapp.js');
+    await removeSession(req.params.id);
+    res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

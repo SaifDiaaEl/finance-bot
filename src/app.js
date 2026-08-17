@@ -21,8 +21,12 @@ app.get('/', (req, res) => {
 // Telegram webhook
 app.post('/api/webhook', async (req, res) => {
   try {
-    const bot = getTelegramBot();
     setupBotHandlers();
+    const bot = getTelegramBot();
+    if (!bot.api.__inited) {
+      await bot.init();
+      bot.api.__inited = true;
+    }
     await bot.handleUpdate(req.body);
     res.sendStatus(200);
   } catch (e) {

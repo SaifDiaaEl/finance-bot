@@ -17,9 +17,10 @@
       <p class="text-gray-400 text-sm mb-6">ادخل رقم Telegram ID الخاص بك لعرض مصاريفك</p>
       <div class="space-y-3">
         <input type="text" id="loginPhone" dir="ltr" placeholder="Telegram ID مثل: 123456789" class="w-full bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 text-white text-center focus:outline-none focus:border-emerald-500 font-mono">
+        <input type="password" id="loginPassword" dir="ltr" placeholder="الباسورد (اختياري)" class="w-full bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 text-white text-center focus:outline-none focus:border-emerald-500 font-mono">
         <button onclick="doLogin()" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 transition rounded-xl font-bold shadow-lg shadow-emerald-600/30">دخول 📊</button>
       </div>
-      <p id="loginError" class="text-red-400 text-sm mt-3 hidden">رقم غير صحيح أو لا توجد بيانات مسجلة</p>
+      <p id="loginError" class="text-red-400 text-sm mt-3 hidden">رقم غير صحيح أو巴斯ورد غلط</p>
     </div>
   </div>
 
@@ -78,13 +79,21 @@
   <script>
     let currentUser = null;
 
-    function doLogin() {
+    async function doLogin() {
       const phone = document.getElementById('loginPhone').value.trim();
+      const password = document.getElementById('loginPassword').value.trim();
       if (!phone) return;
-      localStorage.setItem('ft_user', phone);
-      currentUser = phone;
-      document.getElementById('loginError').classList.add('hidden');
-      loadData();
+      try {
+        const res = await fetch('/api/summary?phone=' + encodeURIComponent(phone) + (password ? '&password=' + encodeURIComponent(password) : ''));
+        if (!res.ok) { document.getElementById('loginError').classList.remove('hidden'); return; }
+        localStorage.setItem('ft_user', phone);
+        if (password) localStorage.setItem('ft_pass', password);
+        currentUser = phone;
+        document.getElementById('loginError').classList.add('hidden');
+        loadData();
+      } catch(e) {
+        document.getElementById('loginError').classList.remove('hidden');
+      }
     }
 
     function doLogout() {
@@ -96,6 +105,7 @@
 
     async function loadData() {
       const phone = currentUser || localStorage.getItem('ft_user');
+      const password = localStorage.getItem('ft_pass');
       if (!phone) return doLogin();
 
       currentUser = phone;
@@ -104,7 +114,7 @@
       document.getElementById('welcomeText').textContent = 'المستخدم: ' + phone;
 
       try {
-        const summaryRes = await fetch('/api/summary?phone=' + encodeURIComponent(phone));
+        const summaryRes = await fetch('/api/summary?phone=' + encodeURIComponent(phone) + (password ? '&password=' + encodeURIComponent(password) : ''));
         if (!summaryRes.ok) throw new Error('no data');
         const s = await summaryRes.json();
         document.getElementById('budget').textContent = s.monthlyBudget + ' ج';
@@ -153,7 +163,10 @@
                   <div class="text-xs text-gray-500">${t.category} - ${t.date.substring(0, 10)}</div>
                 </div>
               </div>
-              <span class="${color} font-bold">${isIncome ? '+' : '-'}${t.amount} ج</span>
+              <div class="flex items-center gap-3">
+                <span class="${color} font-bold">${isIncome ? '+' : '-'}${t.amount} ج</span>
+                <button onclick="deleteTx(${t.id})" class="text-red-400 hover:text-red-300 text-lg" title="حذف">✕</button>
+              </div>
             </div>`;
           }).join('');
         }
@@ -163,6 +176,18 @@
     // Auto-login
     if (localStorage.getItem('ft_user')) {
       loadData();
+    }
+
+    async function deleteTx(id) {
+      const phone = currentUser || localStorage.getItem('ft_user');
+      const password = localStorage.getItem('ft_pass');
+      if (!phone) return;
+      if (!confirm('متأكد تحذف العملية دي؟')) return;
+      try {
+        const res = await fetch('/api/transactions/' + id + '?phone=' + encodeURIComponent(phone) + (password ? '&password=' + encodeURIComponent(password) : ''), { method: 'DELETE' });
+        if (res.status === 403) { alert('巴斯ورد غلط!'); return; }
+        loadData();
+      } catch(e) { alert('فيه مشكلة حصلت'); }
     }
   </script>
 </body>

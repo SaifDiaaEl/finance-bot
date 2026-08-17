@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { getAllUsers, getFinancialSummary, getTransactions, updateUserBudget, deleteTransaction, addTransaction, deleteUser } from './lib/db.js';
+import { getAllUsers, getFinancialSummary, getTransactions, updateUserBudget, deleteTransaction, addTransaction, deleteUser, hasPassword, checkUserPassword } from './lib/db.js';
 import { getTelegramBot, setupBotHandlers } from './services/telegram.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -56,8 +56,13 @@ app.get('/api/users', async (req, res) => {
 
 app.get('/api/summary', async (req, res) => {
   const phone = req.query.phone;
+  const password = req.query.password;
   if (!phone) return res.status(400).json({ error: 'User ID is required' });
   try {
+    if (password) {
+      const ok = await checkUserPassword(phone, password);
+      if (!ok) return res.status(403).json({ error: 'Invalid password' });
+    }
     const summary = await getFinancialSummary(phone);
     res.json(summary);
   } catch (e) {
@@ -77,11 +82,15 @@ app.get('/api/transactions', async (req, res) => {
 });
 
 app.post('/api/budget', async (req, res) => {
-  const { phone, budget, period } = req.body;
+  const { phone, budget, period, password } = req.body;
   if (!phone || budget === undefined) return res.status(400).json({ error: 'User ID and budget are required' });
-  const validPeriods = ['daily', 'weekly', 'monthly', 'yearly'];
-  const p = period && validPeriods.includes(period) ? period : null;
   try {
+    if (password) {
+      const ok = await checkUserPassword(phone, password);
+      if (!ok) return res.status(403).json({ error: 'Invalid password' });
+    }
+    const validPeriods = ['daily', 'weekly', 'monthly', 'yearly'];
+    const p = period && validPeriods.includes(period) ? period : null;
     await updateUserBudget(phone, parseFloat(budget), p);
     res.json({ success: true });
   } catch (e) {
@@ -91,9 +100,13 @@ app.post('/api/budget', async (req, res) => {
 
 app.delete('/api/transactions/:id', async (req, res) => {
   const { id } = req.params;
-  const { phone } = req.query;
+  const { phone, password } = req.query;
   if (!phone) return res.status(400).json({ error: 'User ID is required' });
   try {
+    if (password) {
+      const ok = await checkUserPassword(phone, password);
+      if (!ok) return res.status(403).json({ error: 'Invalid password' });
+    }
     const success = await deleteTransaction(parseInt(id), phone);
     res.json({ success });
   } catch (e) {

@@ -1,9 +1,10 @@
 import { Bot } from 'grammy';
-import { getUser, addTransaction, getFinancialSummary, getTransactions, updateUserBudget } from '../lib/db.js';
+import { getUser, addTransaction, getFinancialSummary, getTransactions, updateUserBudget, deleteTransaction, setUserPassword, checkUserPassword, hasPassword } from '../lib/db.js';
 import { parseFinancialInput, parseReceiptImage, parseAudioVoice } from './gemini.js';
 
 let bot = null;
 let handlersSetup = false;
+const pendingActions = new Map();
 
 function getBot() {
   if (bot) return bot;
@@ -68,10 +69,9 @@ async function sendHelp(ctx) {
     `💬 *تسجيل مصروف:* "صرفت 150 جنيه عشاء"\n` +
     `📥 *تسجيل دخل:* "قبضت 9000 جنيه"\n` +
     `📸 *فاتورة:* ابعت صورة\n` +
-    `🎤 *فويس:* تكلّم بالعامية\n` +
-    `📊 *ملخص:* اكتب "ملخص"\n` +
-    `📜 *العمليات:* اكتب "آخر عمليات"\n` +
-    `💰 *الميزانية:* اكتب "ميزانيتي 7000"`,
+    `🎤 *فويس:* تكلّم بالعامية\n\n` +
+    `📊 /summary - ملخص مالي\n📜 /transactions - العمليات\n💰 /budget - الميزانية\n\n` +
+    `🔒 /password - تعين باسورد (اختياري)\n🗑 /delete - حذف عملية (محتاج巴斯ورد لو مظبوط)`,
     { parse_mode: 'Markdown' }
   );
 }
@@ -156,7 +156,7 @@ export function setupBotHandlers() {
       `📥 "قبضت راتبي 9000 جنيه"\n` +
       `📸 ابعت صورة فاتورة\n` +
       `🎤 ابعت رسالة صوتية\n\n` +
-      `📊 /summary - ملخص مالي\n📜 /transactions - العمليات\n💰 /budget - الميزانية\n/help - مساعدة`
+      `📊 /summary - ملخص مالي\n📜 /transactions - العمليات\n💰 /budget - الميزانية\n🔒 /password - باسورد (اختياري)\n🗑 /delete - حذف عملية\n/help - مساعدة`
     );
   });
 
@@ -164,6 +164,44 @@ export function setupBotHandlers() {
   b.command('summary', sendSummary);
   b.command('transactions', sendTransactions);
   b.command('budget', async (ctx) => handleBudget(ctx, ctx.message.text));
+
+  b.command('password', async (ctx) => {
+    const id = uid(ctx);
+    const args = (ctx.message.text || '').replace('/password', '').trim();
+    if (!args) {
+      const has = await hasPassword(id);
+      await ctx.reply(has
+        ? '🔒 عندك باسورد بالفعل. اكتب:\n/password باسورد_جديد لتغييره\n/password حذف لمسح الباسورد'
+        : '🔒 مفيش باسورد مظبوط. اكتب:\n/password اسم_باسورد_اللي_تعجبك\n\nلو مش عايز باسورد اسيبك عادي.');
+      return;
+    }
+    if (args === 'حذف' || args === 'delete' || args === 'remove') {
+      await setUserPassword(id, null);
+      await ctx.reply('🔓 تم مسح الباسورد. حسابك دلوقتي مفتوح بدون باسورد.');
+      return;
+    }
+    await setUserPassword(id, args);
+    await ctx.reply(`🔒 تم تعين الباسورد: *${args}*\n\nمحدش يقدر يحذف أو يعدّل عملياتك من غيره.`, { parse_mode: 'Markdown' });
+  });
+
+  b.command('delete', async (ctx) => {
+    const id = uid(ctx);
+    const has = await hasPassword(id);
+    if (has) {
+      pendingActions.set(id, { action: 'delete_tx', time: Date.now() });
+      await ctx.reply('🔒 اكتب الباسورد عشان تقدر تحذف عملياتك.');
+      return;
+    }
+    const txs = await getTransactions(id, 5);
+    if (txs.length === 0) { await ctx.reply('مفيش عمليات تحذف.'); return; }
+    let text = '📜 ابعت رقم العملية اللي عايز تحذفها:\n\n';
+    txs.forEach((t, i) => {
+      const sign = t.type === 'income' ? '📥' : '📤';
+      text += `${i + 1}. ${sign} ${t.amount} ج (${t.description || t.category})\n`;
+    });
+    pendingActions.set(id, { action: 'delete_tx_pick', txs, time: Date.now() });
+    await ctx.reply(text);
+  });
 
   b.on('message:photo', async (ctx) => {
     const id = uid(ctx);
@@ -203,7 +241,44 @@ export function setupBotHandlers() {
   b.on('message:text', async (ctx) => {
     const text = ctx.message.text.trim();
     const lower = text.toLowerCase();
-    await getUser(uid(ctx));
+    const id = uid(ctx);
+    await getUser(id);
+
+    const pending = pendingActions.get(id);
+    if (pending && Date.now() - pending.time < 300000) {
+      if (pending.action === 'delete_tx') {
+        pendingActions.delete(id);
+        const ok = await checkUserPassword(id, text);
+        if (!ok) {
+          await ctx.reply('❌巴斯ورد غلط. حاول تاني من الأزرار.');
+          return;
+        }
+        const txs = await getTransactions(id, 5);
+        if (txs.length === 0) { await ctx.reply('مفيش عمليات تحذف.'); return; }
+        let msg = '📜 ابعت رقم العملية اللي عايز تحذفها:\n\n';
+        txs.forEach((t, i) => {
+          const sign = t.type === 'income' ? '📥' : '📤';
+          msg += `${i + 1}. ${sign} ${t.amount} ج (${t.description || t.category})\n`;
+        });
+        pendingActions.set(id, { action: 'delete_tx_pick', txs, time: Date.now() });
+        await ctx.reply(msg);
+        return;
+      }
+      if (pending.action === 'delete_tx_pick') {
+        pendingActions.delete(id);
+        const num = parseInt(text);
+        if (isNaN(num) || num < 1 || num > pending.txs.length) {
+          await ctx.reply('❌ رقم غلط.');
+          return;
+        }
+        const tx = pending.txs[num - 1];
+        await deleteTransaction(tx.id, id);
+        await ctx.reply(`✅ تم حذف العملية: ${tx.type === 'income' ? '📥' : '📤'} ${tx.amount} ج (${tx.description || tx.category})`);
+        return;
+      }
+    } else if (pending) {
+      pendingActions.delete(id);
+    }
 
     if (lower === 'ملخص' || lower === 'رصيد' || lower === 'تقرير') return sendSummary(ctx);
     if (lower === 'آخر عمليات' || lower === 'transactions') return sendTransactions(ctx);

@@ -84,6 +84,12 @@ async function initDb() {
   if (!userCols.rows.some(r => r.column_name === 'budget_period')) {
     await pool.query("ALTER TABLE users ADD COLUMN budget_period TEXT DEFAULT 'monthly'");
   }
+  if (!userCols.rows.some(r => r.column_name === 'password')) {
+    await pool.query("ALTER TABLE users ADD COLUMN password TEXT");
+  }
+  if (!userCols.rows.some(r => r.column_name === 'telegram_id')) {
+    await pool.query("ALTER TABLE users ADD COLUMN telegram_id TEXT");
+  }
 
   const defaultCategories = [
     { name: 'أكل ومشروبات', type: 'expense' },
@@ -112,12 +118,27 @@ try {
 }
 
 export async function getUser(phone) {
-  let res = await pool.query('SELECT * FROM users WHERE phone = $1', [phone]);
+  let res = await pool.query('SELECT * FROM users WHERE phone = $1 OR telegram_id = $1', [phone]);
   if (res.rows.length === 0) {
     await pool.query('INSERT INTO users (phone) VALUES ($1)', [phone]);
     res = await pool.query('SELECT * FROM users WHERE phone = $1', [phone]);
   }
   return res.rows[0];
+}
+
+export async function setUserPassword(userId, password) {
+  await pool.query('UPDATE users SET password = $1 WHERE phone = $2 OR telegram_id = $2', [password, userId]);
+}
+
+export async function checkUserPassword(userId, password) {
+  const user = await getUser(userId);
+  if (!user.password) return true;
+  return user.password === password;
+}
+
+export async function hasPassword(userId) {
+  const user = await getUser(userId);
+  return !!user.password;
 }
 
 export async function updateUserBudget(phone, budget, period = null) {

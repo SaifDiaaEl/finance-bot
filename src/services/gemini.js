@@ -8,8 +8,8 @@ if (!apiKey) {
   console.error('❌ GEMINI_API_KEY is not set. Add it to .env or environment variables.');
 }
 const genAI = new GoogleGenerativeAI(apiKey || 'missing-key');
-const primaryModel = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-const fallbackModels = ['gemini-2.0-flash', 'gemini-2.0-flash-lite'];
+const primaryModel = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
+const fallbackModels = ['gemini-3.5-flash-lite', 'gemini-2.5-flash'];
 
 const systemInstruction = `
 أنت مساعد مالي ذكي جداً ومتفهم للهجة المصرية العامية والفصحى البسيطة.

@@ -8,8 +8,8 @@ if (!apiKey) {
   console.error('❌ GEMINI_API_KEY is not set. Add it to .env or environment variables.');
 }
 const genAI = new GoogleGenerativeAI(apiKey || 'missing-key');
-const primaryModel = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
-const fallbackModels = ['gemini-2.0-flash-lite', 'gemini-1.5-flash', 'gemini-1.5-flash-8b'];
+const primaryModel = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+const fallbackModels = ['gemini-2.0-flash', 'gemini-2.0-flash-lite'];
 
 const systemInstruction = `
 أنت مساعد مالي ذكي جداً ومتفهم للهجة المصرية العامية والفصحى البسيطة.
@@ -102,9 +102,9 @@ async function generateWithFallback(parts) {
       return JSON.parse(responseText);
     } catch (error) {
       lastError = error;
+      console.error(`Gemini model ${modelName} failed:`, error?.status || error?.message?.substring(0, 100));
       const isQuota = error?.status === 429 || /quota|Too Many|exceeded/i.test(error?.message || '');
       if (!isQuota && error?.status === 400) {
-        // Invalid input (e.g. unsupported media) — don't retry other models
         break;
       }
     }

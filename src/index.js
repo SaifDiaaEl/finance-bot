@@ -1,19 +1,27 @@
 import dotenv from 'dotenv';
 import app from './app.js';
-import { startAllSessions } from './services/whatsapp.js';
 
 dotenv.config();
 
 const PORT = process.env.PORT || 3000;
 
-app.listen(PORT, async () => {
+async function main() {
   console.log(`🚀 Financial Assistant Server running on http://localhost:${PORT}`);
-  console.log(`📱 Starting WhatsApp engine...`);
+
+  if (process.env.VERCEL) {
+    console.log('☁️ Running on Vercel — use webhook mode');
+    return;
+  }
 
   try {
-    const count = await startAllSessions();
-    console.log(`✅ ${count} bot session(s) started.`);
+    const { startTelegramBot } = await import('./services/telegram.js');
+    const bot = await startTelegramBot();
+    bot.start({
+      onStart: () => console.log('✅ Telegram bot started (polling mode)'),
+    });
   } catch (err) {
-    console.error('WhatsApp Bot Error:', err);
+    console.error('Telegram Bot Error:', err.message);
   }
-});
+}
+
+app.listen(PORT, () => main());

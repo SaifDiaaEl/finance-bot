@@ -10,9 +10,9 @@
     }
   ],
   "rewrites": [
+    { "source": "/api/webhook", "destination": "/api/index.js" },
+    { "source": "/api/(.*)", "destination": "/api/index.js" },
+    { "source": "/(.*\\.html)", "destination": "/$1" },
     { "source": "/(.*)", "destination": "/api/index.js" }
-  ],
-  "env": {
-    "NODE_OPTIONS": "--max-old-space-size=512"
-  }
+  ]
 }

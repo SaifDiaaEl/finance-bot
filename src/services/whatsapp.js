@@ -4,7 +4,7 @@ import qrcodeTerminal from 'qrcode-terminal';
 import path from 'path';
 import fs from 'fs';
 import pino from 'pino';
-import { getUser, addTransaction, getFinancialSummary, getTransactions, updateUserBudget, getBotSessions, createBotSession, updateBotSessionStatus, deleteBotSession, isMessageProcessed, markMessageProcessed } from '../lib/db.js';
+import { getUser, addTransaction, getFinancialSummary, getTransactions, updateUserBudget, getBotSessions, createBotSession, updateBotSessionStatus, deleteBotSession, isMessageProcessed, markMessageProcessed, clearSessionAuth } from '../lib/db.js';
 import { usePgAuthState } from './dbAuth.js';
 import { parseFinancialInput, parseReceiptImage, parseAudioVoice } from './gemini.js';
 
@@ -59,7 +59,7 @@ function genSessionId() {
   return 'bot-' + Math.random().toString(36).slice(2, 6);
 }
 
-export async function startSession(sess) {
+export async function startSession(sess, { pairingMode = false } = {}) {
   const session = sessions.get(sess.id) || makeSession(sess);
   session.status = 'connecting';
   session.sock = null;
@@ -67,7 +67,7 @@ export async function startSession(sess) {
   const { state, saveCreds } = await usePgAuthState(session.id);
   const sock = makeWASocket({
     auth: state,
-    printQRInTerminal: true,
+    printQRInTerminal: !pairingMode,
     logger: pino({ level: 'silent' }),
   });
 
@@ -148,23 +148,26 @@ export async function requestPairingCode(id, { name, phone, botPhone } = {}) {
   if (!cleanedBot) throw new Error('رقم البوت مطلوب');
 
   let session = sessions.get(id);
-  if (!session) {
-    const ownerPhone = String(phone || '').replace(/\D/g, '');
-    if (!ownerPhone) throw new Error('رقم المستخدم مطلوب');
-    await createBotSession({ id, name, ownerPhone, botPhone: cleanedBot });
-    try { await getUser(ownerPhone); } catch {}
-    session = await startSession({ id, name, ownerPhone, botPhone: cleanedBot });
-  } else if (session.status === 'failed' || session.status === 'disconnected') {
-    session.failCount = 0;
+  if (session) {
     try { if (session.sock) await session.sock.end(undefined); } catch {}
-    session = await startSession(session);
+    sessions.delete(id);
   }
 
-  if (!session.sock) throw new Error('WhatsApp socket not initialized');
-  if (session.status === 'connected') throw new Error('هذا البوت متصل بالفعل، لا حاجة لإعادة الربط');
+  // Clear old auth state to prevent conflicts
+  await clearSessionAuth(id);
 
-  const code = await session.sock.requestPairingCode(cleanedBot);
-  return code;
+  const ownerPhone = String(phone || '').replace(/\D/g, '');
+  if (!ownerPhone) throw new Error('رقم المستخدم مطلوب');
+  await createBotSession({ id, name, ownerPhone, botPhone: cleanedBot });
+  try { await getUser(ownerPhone); } catch {}
+  session = await startSession({ id, name, ownerPhone, botPhone: cleanedBot }, { pairingMode: true });
+
+  if (!session.sock) throw new Error('WhatsApp socket not initialized');
+
+  logLine(`[${session.id}] Requesting pairing code for ${cleanedBot}`);
+  const pairingCode = await session.sock.requestPairingCode(cleanedBot);
+  logLine(`[${session.id}] Pairing code: ${pairingCode}`);
+  return pairingCode;
 }
 
 export async function removeSession(id) {

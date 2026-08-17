@@ -308,6 +308,10 @@ export async function markMessageProcessed(msgKey) {
   );
 }
 
+export async function clearSessionAuth(prefix) {
+  await pool.query("DELETE FROM whatsapp_auth WHERE key LIKE $1", [prefix + '/%']);
+}
+
 export async function cleanupOldProcessedMessages(hours = 24) {
   await pool.query('DELETE FROM processed_messages WHERE created_at < NOW() - ($1 || \' hours\')::interval', [hours]);
 }

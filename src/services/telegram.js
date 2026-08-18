@@ -1,4 +1,4 @@
-import { Bot } from 'grammy';
+import { Bot, InlineKeyboard } from 'grammy';
 import { getUser, addTransaction, getFinancialSummary, getTransactions, updateUserBudget, deleteTransaction, setUserPassword, checkUserPassword, hasPassword, getMonthlyComparison, getCategoryBreakdown } from '../lib/db.js';
 import { parseFinancialInput, parseReceiptImage, parseAudioVoice } from './gemini.js';
 
@@ -19,6 +19,31 @@ function uid(ctx) {
 }
 
 const SEP = '──────────────────────';
+
+const mainKeyboard = new InlineKeyboard()
+  .text('📊 ملخص', 'cmd:summary')
+  .text('📋 العمليات', 'cmd:transactions')
+  .row()
+  .text('💰 الميزانية', 'cmd:budget')
+  .text('🏷 التصنيفات', 'cmd:categories')
+  .row()
+  .text('📈 المقارنة', 'cmd:compare')
+  .text('🗑 حذف', 'cmd:delete')
+  .row()
+  .text('🔒 باسورد', 'cmd:password')
+  .text('ℹ️ مساعدة', 'cmd:help');
+
+function startKeyboard() {
+  return new InlineKeyboard()
+    .text('📊 ملخص', 'cmd:summary')
+    .text('📋 العمليات', 'cmd:transactions')
+    .row()
+    .text('💰 الميزانية', 'cmd:budget')
+    .text('🏷 التصنيفات', 'cmd:categories')
+    .row()
+    .text('📈 المقارنة', 'cmd:compare')
+    .text('ℹ️ مساعدة', 'cmd:help');
+}
 
 async function sendSummary(ctx) {
   const id = uid(ctx);
@@ -49,10 +74,10 @@ async function sendSummary(ctx) {
       });
     }
 
-    await ctx.reply(msg, { parse_mode: 'Markdown' });
+    await ctx.reply(msg, { parse_mode: 'Markdown', reply_markup: mainKeyboard });
   } catch (e) {
     console.error('Summary error:', e.message);
-    await ctx.reply('❌ حصلت مشكلة في جلب الملخص.');
+    await ctx.reply('❌ حصلت مشكلة في جلب الملخص.', { reply_markup: mainKeyboard });
   }
 }
 
@@ -61,7 +86,7 @@ async function sendTransactions(ctx) {
   try {
     const txs = await getTransactions(id, 5);
     if (txs.length === 0) {
-      await ctx.reply(`📊 *tahweshabot*\n\nلا توجد عمليات مسجلة بعد.\nابعت أي رسالة عشان تبدأ تسجل مصاريفك.`, { parse_mode: 'Markdown' });
+      await ctx.reply(`📊 *tahweshabot*\n\nلا توجد عمليات مسجلة بعد.\nابعت أي رسالة عشان تبدأ تسجل مصاريفك.`, { parse_mode: 'Markdown', reply_markup: mainKeyboard });
       return;
     }
     let msg = `📊 *tahweshabot*\n`;
@@ -69,16 +94,15 @@ async function sendTransactions(ctx) {
     msg += `📋 *آخر ${txs.length} عمليات*\n\n`;
 
     txs.forEach((t, i) => {
-      const sign = t.type === 'income' ? '🟢 +' : '🔴 -';
       const emoji = t.type === 'income' ? '📥' : '📤';
       msg += `${i + 1}. ${emoji} \`${t.amount.toLocaleString('ar-EG')} ج\`\n`;
       msg += `   └ ${t.description || t.category} · ${t.category}\n`;
       msg += `   └ ${t.date.substring(0, 10)}\n\n`;
     });
 
-    await ctx.reply(msg, { parse_mode: 'Markdown' });
+    await ctx.reply(msg, { parse_mode: 'Markdown', reply_markup: mainKeyboard });
   } catch (e) {
-    await ctx.reply('❌ حصلت مشكلة.');
+    await ctx.reply('❌ حصلت مشكلة.', { reply_markup: mainKeyboard });
   }
 }
 
@@ -92,19 +116,9 @@ async function sendHelp(ctx) {
     `📸 *صورة:* ابعت صورة فاتورة\n` +
     `🎤 *صوت:* تكلّم بالعامية\n\n` +
     `${SEP}\n\n` +
-    `⚙️ *الأوامر:*\n\n` +
-    `📊 /summary — ملخص مالي شامل\n` +
-    `📋 /transactions — آخر العمليات\n` +
-    `💰 /budget — تعين الميزانية\n` +
-    `🏷 /categories — مصروفات بالتصنيفات\n` +
-    `📈 /compare — مقارنة الشهور\n` +
-    `🔒 /password — حماية الحساب\n` +
-    `🗑 /delete — حذف عملية\n` +
-    `ℹ️ /help — المساعدة\n\n` +
-    `${SEP}\n\n` +
-    `💡 *مثال:* ابعت "مقبوضات 35 جنيه اكل"\n`;
+    `💡 *مثال:* ابعت "مقبوضات 35 جنيه اكل"`;
 
-  await ctx.reply(msg, { parse_mode: 'Markdown' });
+  await ctx.reply(msg, { parse_mode: 'Markdown', reply_markup: mainKeyboard });
 }
 
 async function handleBudget(ctx, text) {
@@ -136,7 +150,7 @@ async function handleBudget(ctx, text) {
       `${SEP}\n\n` +
       `✅ *تم تحديث الميزانية*\n\n` +
       `💰 الميزانية ${periodName}: \`${num.toLocaleString('ar-EG')} ج\``,
-      { parse_mode: 'Markdown' }
+      { parse_mode: 'Markdown', reply_markup: mainKeyboard }
     );
   } else {
     await ctx.reply(
@@ -146,14 +160,14 @@ async function handleBudget(ctx, text) {
       `• ميزانيتي 7000\n` +
       `• ميزانيتي 3000 أسبوعي\n` +
       `• budget 5000 شهري`,
-      { parse_mode: 'Markdown' }
+      { parse_mode: 'Markdown', reply_markup: mainKeyboard }
     );
   }
 }
 
 async function handleAiResult(ctx, aiResult, originalText) {
   if (!aiResult) {
-    await ctx.reply(`📊 *tahweshabot*\n\n❌ حصلت مشكلة مؤقتة. حاول تاني.`, { parse_mode: 'Markdown' });
+    await ctx.reply(`📊 *tahweshabot*\n\n❌ حصلت مشكلة مؤقتة. حاول تاني.`, { parse_mode: 'Markdown', reply_markup: mainKeyboard });
     return;
   }
   const id = uid(ctx);
@@ -189,14 +203,14 @@ async function handleAiResult(ctx, aiResult, originalText) {
       `🏷 التصنيف: *${aiResult.category}*\n` +
       `📝 الوصف: ${aiResult.description || originalText}\n` +
       `💰 المتبقي: \`${summary.remainingBudget.toLocaleString('ar-EG')} ج\``,
-      { parse_mode: 'Markdown' }
+      { parse_mode: 'Markdown', reply_markup: mainKeyboard }
     );
   } else {
     await ctx.reply(
       `📊 *tahweshabot*\n\n` +
       `👋 أهلاً! ابعت مصاريفك أو صور فواتير.\n` +
       `💬 جرّب: "صرفت 50 جنيه اكل"`,
-      { parse_mode: 'Markdown' }
+      { parse_mode: 'Markdown', reply_markup: mainKeyboard }
     );
   }
 }
@@ -220,18 +234,8 @@ export function setupBotHandlers() {
       `💬 "صرفت 50 جنيه اكل"\n` +
       `💬 "قبضت راتبي 9000"\n` +
       `📸 ابعت صورة فاتورة\n` +
-      `🎤 ابعت رسالة صوتية\n\n` +
-      `${SEP}\n\n` +
-      `⚙️ *الأوامر:*\n\n` +
-      `📊 /summary — ملخص مالي\n` +
-      `📋 /transactions — العمليات\n` +
-      `💰 /budget — الميزانية\n` +
-      `🏷 /categories — التصنيفات\n` +
-      `📈 /compare — المقارنة\n` +
-      `🔒 /password — الحماية\n` +
-      `🗑 /delete — حذف\n` +
-      `ℹ️ /help — المساعدة`,
-      { parse_mode: 'Markdown' }
+      `🎤 ابعت رسالة صوتية`,
+      { parse_mode: 'Markdown', reply_markup: startKeyboard() }
     );
   });
 
@@ -252,14 +256,14 @@ export function setupBotHandlers() {
         : `📊 *tahweshabot*\n\n🔒 *مفيش باسورد*\n\n` +
           `لتعين باسورد: /password ال_باسورد\n` +
           `لو مش عايز باسورد اسيبك عادي.`,
-        { parse_mode: 'Markdown' });
+        { parse_mode: 'Markdown', reply_markup: mainKeyboard });
       return;
     }
     if (args === 'حذف' || args === 'delete' || args === 'remove') {
       await setUserPassword(id, null);
       await ctx.reply(
         `📊 *tahweshabot*\n\n🔓 *تم مسح الباسورد*\nحسابك مفتوح بدون حماية.`,
-        { parse_mode: 'Markdown' }
+        { parse_mode: 'Markdown', reply_markup: mainKeyboard }
       );
       return;
     }
@@ -268,7 +272,7 @@ export function setupBotHandlers() {
       `📊 *tahweshabot*\n\n🔒 *تم تعين الباسورد*\n\n` +
       `الباسورد: \`${args}\`\n\n` +
       `محدش يقدر يحذف أو يعدّل عملياتك من غيره.`,
-      { parse_mode: 'Markdown' }
+      { parse_mode: 'Markdown', reply_markup: mainKeyboard }
     );
   });
 
@@ -278,14 +282,14 @@ export function setupBotHandlers() {
     if (has) {
       pendingActions.set(id, { action: 'delete_tx', time: Date.now() });
       await ctx.reply(
-        `📊 *tahweshabot*\n\n🔒 *محتاجباسورد*\nاكتبباسورد عشان تقدر تحذف.`,
+        `📊 *tahweshabot*\n\n🔒 *محتاج باسورد*\nاكتب باسورد عشان تقدر تحذف.`,
         { parse_mode: 'Markdown' }
       );
       return;
     }
     const txs = await getTransactions(id, 5);
     if (txs.length === 0) {
-      await ctx.reply(`📊 *tahweshabot*\n\n📋 لا توجد عمليات تحذف.`, { parse_mode: 'Markdown' });
+      await ctx.reply(`📊 *tahweshabot*\n\n📋 لا توجد عمليات تحذف.`, { parse_mode: 'Markdown', reply_markup: mainKeyboard });
       return;
     }
     let msg = `📊 *tahweshabot*\n`;
@@ -305,7 +309,7 @@ export function setupBotHandlers() {
     try {
       const cats = await getCategoryBreakdown(id, 1);
       if (cats.length === 0) {
-        await ctx.reply(`📊 *tahweshabot*\n\n🏷 لا توجد مصروفات الشهر ده.`, { parse_mode: 'Markdown' });
+        await ctx.reply(`📊 *tahweshabot*\n\n🏷 لا توجد مصروفات الشهر ده.`, { parse_mode: 'Markdown', reply_markup: mainKeyboard });
         return;
       }
       const total = cats.reduce((s, c) => s + c.total, 0);
@@ -321,9 +325,9 @@ export function setupBotHandlers() {
       });
       msg += `${SEP}\n`;
       msg += `💰 الإجمالي: \`${total.toLocaleString('ar-EG')} ج\``;
-      await ctx.reply(msg, { parse_mode: 'Markdown' });
+      await ctx.reply(msg, { parse_mode: 'Markdown', reply_markup: mainKeyboard });
     } catch (e) {
-      await ctx.reply('❌ حصلت مشكلة.');
+      await ctx.reply('❌ حصلت مشكلة.', { reply_markup: mainKeyboard });
     }
   });
 
@@ -333,7 +337,7 @@ export function setupBotHandlers() {
     try {
       const data = await getMonthlyComparison(id);
       if (data.length === 0) {
-        await ctx.reply(`📊 *tahweshabot*\n\n📈 مفيش بيانات كافية للمقارنة.`, { parse_mode: 'Markdown' });
+        await ctx.reply(`📊 *tahweshabot*\n\n📈 مفيش بيانات كافية للمقارنة.`, { parse_mode: 'Markdown', reply_markup: mainKeyboard });
         return;
       }
       const months = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
@@ -353,10 +357,158 @@ export function setupBotHandlers() {
           ? `⚠️ صرفت \`${diff.toLocaleString('ar-EG')} ج\` (${pct}%) *أكتر* من الشهر اللي فات`
           : `✅ وفّرت \`${Math.abs(diff).toLocaleString('ar-EG')} ج\` (${Math.abs(pct)}%) *عن* الشهر اللي فات`;
       }
-      await ctx.reply(msg, { parse_mode: 'Markdown' });
+      await ctx.reply(msg, { parse_mode: 'Markdown', reply_markup: mainKeyboard });
     } catch (e) {
-      await ctx.reply('❌ حصلت مشكلة.');
+      await ctx.reply('❌ حصلت مشكلة.', { reply_markup: mainKeyboard });
     }
+  });
+
+  // Inline button callbacks
+  b.callbackQuery('cmd:summary', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const fakeCtx = { from: ctx.from, message: ctx.callbackQuery.message, reply: (text, opts) => ctx.editMessageText(text, opts) };
+    await sendSummary(fakeCtx);
+  });
+
+  b.callbackQuery('cmd:transactions', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const fakeCtx = { from: ctx.from, message: ctx.callbackQuery.message, reply: (text, opts) => ctx.editMessageText(text, opts) };
+    await sendTransactions(fakeCtx);
+  });
+
+  b.callbackQuery('cmd:budget', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    await ctx.editMessageText(
+      `📊 *tahweshabot*\n\n` +
+      `${SEP}\n\n` +
+      `💰 *تعين الميزانية*\n\n` +
+      `اكتب المبلغ مع الفترة:\n\n` +
+      `• ميزانيتي 7000\n` +
+      `• ميزانيتي 3000 أسبوعي\n` +
+      `• budget 5000 شهري`,
+      { parse_mode: 'Markdown', reply_markup: mainKeyboard }
+    );
+  });
+
+  b.callbackQuery('cmd:categories', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const fakeCtx = { from: ctx.from, message: ctx.callbackQuery.message, reply: (text, opts) => ctx.editMessageText(text, opts) };
+    const id = String(ctx.from.id);
+    await getUser(id);
+    try {
+      const cats = await getCategoryBreakdown(id, 1);
+      if (cats.length === 0) {
+        await ctx.editMessageText(`📊 *tahweshabot*\n\n🏷 لا توجد مصروفات الشهر ده.`, { parse_mode: 'Markdown', reply_markup: mainKeyboard });
+        return;
+      }
+      const total = cats.reduce((s, c) => s + c.total, 0);
+      let msg = `📊 *tahweshabot*\n`;
+      msg += `${SEP}\n\n`;
+      msg += `🏷 *تصنيفات المصروفات*\n\n`;
+      cats.forEach(c => {
+        const pct = Math.round(c.total / total * 100);
+        const bar = '█'.repeat(Math.round(pct / 10)) + '░'.repeat(10 - Math.round(pct / 10));
+        msg += `*${c.category}*\n`;
+        msg += `\`${bar}\` *${pct}%*\n`;
+        msg += `└ \`${c.total.toLocaleString('ar-EG')} ج\`\n\n`;
+      });
+      msg += `${SEP}\n`;
+      msg += `💰 الإجمالي: \`${total.toLocaleString('ar-EG')} ج\``;
+      await ctx.editMessageText(msg, { parse_mode: 'Markdown', reply_markup: mainKeyboard });
+    } catch (e) {
+      await ctx.editMessageText('❌ حصلت مشكلة.', { reply_markup: mainKeyboard });
+    }
+  });
+
+  b.callbackQuery('cmd:compare', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const id = String(ctx.from.id);
+    await getUser(id);
+    try {
+      const data = await getMonthlyComparison(id);
+      if (data.length === 0) {
+        await ctx.editMessageText(`📊 *tahweshabot*\n\n📈 مفيش بيانات كافية للمقارنة.`, { parse_mode: 'Markdown', reply_markup: mainKeyboard });
+        return;
+      }
+      const months = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+      let msg = `📊 *tahweshabot*\n`;
+      msg += `${SEP}\n\n`;
+      msg += `📈 *مقارنة الشهور*\n\n`;
+      data.forEach(d => {
+        msg += `*${months[d.month - 1]}*\n`;
+        msg += `└ 📤 المصروفات: \`${d.totalExpenses.toLocaleString('ar-EG')} ج\`\n`;
+        msg += `└ 📥 الدخل: \`${d.totalIncome.toLocaleString('ar-EG')} ج\`\n\n`;
+      });
+      if (data.length >= 2) {
+        const diff = data[0].totalExpenses - data[1].totalExpenses;
+        const pct = Math.round(diff / data[1].totalExpenses * 100);
+        msg += `${SEP}\n`;
+        msg += diff > 0
+          ? `⚠️ صرفت \`${diff.toLocaleString('ar-EG')} ج\` (${pct}%) *أكتر* من الشهر اللي فات`
+          : `✅ وفّرت \`${Math.abs(diff).toLocaleString('ar-EG')} ج\` (${Math.abs(pct)}%) *عن* الشهر اللي فات`;
+      }
+      await ctx.editMessageText(msg, { parse_mode: 'Markdown', reply_markup: mainKeyboard });
+    } catch (e) {
+      await ctx.editMessageText('❌ حصلت مشكلة.', { reply_markup: mainKeyboard });
+    }
+  });
+
+  b.callbackQuery('cmd:delete', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const id = String(ctx.from.id);
+    const hasPw = await hasPassword(id);
+    if (hasPw) {
+      pendingActions.set(id, { action: 'delete_tx', time: Date.now() });
+      await ctx.editMessageText(
+        `📊 *tahweshabot*\n\n🔒 *محتاج باسورد*\nاكتب باسورد عشان تقدر تحذف.`,
+        { parse_mode: 'Markdown' }
+      );
+      return;
+    }
+    const txs = await getTransactions(id, 5);
+    if (txs.length === 0) {
+      await ctx.editMessageText(`📊 *tahweshabot*\n\n📋 لا توجد عمليات تحذف.`, { parse_mode: 'Markdown', reply_markup: mainKeyboard });
+      return;
+    }
+    let msg = `📊 *tahweshabot*\n`;
+    msg += `${SEP}\n\n`;
+    msg += `🗑 *اختر العملية:*\n\n`;
+    txs.forEach((t, i) => {
+      const emoji = t.type === 'income' ? '📥' : '📤';
+      msg += `${i + 1}. ${emoji} \`${t.amount.toLocaleString('ar-EG')} ج\` — ${t.description || t.category}\n`;
+    });
+    pendingActions.set(id, { action: 'delete_tx_pick', txs, time: Date.now() });
+    await ctx.editMessageText(msg, { parse_mode: 'Markdown' });
+  });
+
+  b.callbackQuery('cmd:password', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const id = String(ctx.from.id);
+    const hasPw = await hasPassword(id);
+    await ctx.editMessageText(hasPw
+      ? `📊 *tahweshabot*\n\n🔒 *عندك باسورد بالفعل*\n\n` +
+        `للتغيير: /password باسورد_جديد\n` +
+        `للحذف: /password حذف`
+      : `📊 *tahweshabot*\n\n🔒 *مفيش باسورد*\n\n` +
+        `لتعين باسورد: /password ال_باسورد\n` +
+        `لو مش عايز باسورد اسيبك عادي.`,
+      { parse_mode: 'Markdown', reply_markup: mainKeyboard }
+    );
+  });
+
+  b.callbackQuery('cmd:help', async (ctx) => {
+    await ctx.answerCallbackQuery();
+    const msg = `📊 *tahweshabot*\n\n` +
+      `${SEP}\n\n` +
+      `👋 أهلاً! أنا مساعدك المالي الذكي\n\n` +
+      `📝 *طريقة التسجيل:*\n\n` +
+      `💬 *نص:* "صرفت 50 جنيه اكل"\n` +
+      `💬 *نص:* "قبضت راتبي 9000"\n` +
+      `📸 *صورة:* ابعت صورة فاتورة\n` +
+      `🎤 *صوت:* تكلّم بالعامية\n\n` +
+      `${SEP}\n\n` +
+      `💡 *مثال:* ابعت "مقبوضات 35 جنيه اكل"`;
+    await ctx.editMessageText(msg, { parse_mode: 'Markdown', reply_markup: mainKeyboard });
   });
 
   b.on('message:photo', async (ctx) => {
@@ -378,7 +530,7 @@ export function setupBotHandlers() {
       console.error('Photo error:', e.message);
       await ctx.reply(
         `📊 *tahweshabot*\n\n❌ لم أستطع تحليل الصورة.`,
-        { parse_mode: 'Markdown' }
+        { parse_mode: 'Markdown', reply_markup: mainKeyboard }
       );
     }
   });
@@ -401,7 +553,7 @@ export function setupBotHandlers() {
       console.error('Voice error:', e.message);
       await ctx.reply(
         `📊 *tahweshabot*\n\n❌ لم أستطع تحليل الصوت.`,
-        { parse_mode: 'Markdown' }
+        { parse_mode: 'Markdown', reply_markup: mainKeyboard }
       );
     }
   });
@@ -420,13 +572,13 @@ export function setupBotHandlers() {
         if (!ok) {
           await ctx.reply(
             `📊 *tahweshabot*\n\n🔒 *باسورد غلط*\nحاول تاني.`,
-            { parse_mode: 'Markdown' }
+            { parse_mode: 'Markdown', reply_markup: mainKeyboard }
           );
           return;
         }
         const txs = await getTransactions(id, 5);
         if (txs.length === 0) {
-          await ctx.reply(`📊 *tahweshabot*\n\n📋 لا توجد عمليات.`, { parse_mode: 'Markdown' });
+          await ctx.reply(`📊 *tahweshabot*\n\n📋 لا توجد عمليات.`, { parse_mode: 'Markdown', reply_markup: mainKeyboard });
           return;
         }
         let msg = `📊 *tahweshabot*\n`;
@@ -446,7 +598,7 @@ export function setupBotHandlers() {
         if (isNaN(num) || num < 1 || num > pending.txs.length) {
           await ctx.reply(
             `📊 *tahweshabot*\n\n❌ رقم غلط. جرّب تاني.`,
-            { parse_mode: 'Markdown' }
+            { parse_mode: 'Markdown', reply_markup: mainKeyboard }
           );
           return;
         }
@@ -455,7 +607,7 @@ export function setupBotHandlers() {
         await ctx.reply(
           `📊 *tahweshabot*\n\n✅ *تم الحذف*\n\n` +
           `${tx.type === 'income' ? '📥' : '📤'} \`${tx.amount.toLocaleString('ar-EG')} ج\` — ${tx.description || tx.category}`,
-          { parse_mode: 'Markdown' }
+          { parse_mode: 'Markdown', reply_markup: mainKeyboard }
         );
         return;
       }

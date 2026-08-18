@@ -65,7 +65,7 @@ async function sendTransactions(ctx) {
 
 async function sendHelp(ctx) {
   await ctx.reply(
-    `🤖 *المساعد المالي الذكي*\n\n` +
+    `🤖 *tahweshabot*\n\n` +
     `💬 *تسجيل مصروف:* "صرفت 150 جنيه عشاء"\n` +
     `📥 *تسجيل دخل:* "قبضت 9000 جنيه"\n` +
     `📸 *فاتورة:* ابعت صورة\n` +
@@ -151,12 +151,13 @@ export function setupBotHandlers() {
     await getUser(uid(ctx));
     const name = ctx.from.first_name || 'صديقي';
     await ctx.reply(
-      `مرحباً ${name}! 👋\n\nأنا مساعدك المالي الذكي.\n\n` +
+      `مرحباً ${name}! 👋\n\nأنا *tahweshabot* — مساعدك المالي الذكي.\n\n` +
       `💸 "صرفت 50 جنيه اكل"\n` +
       `📥 "قبضت راتبي 9000 جنيه"\n` +
       `📸 ابعت صورة فاتورة\n` +
       `🎤 ابعت رسالة صوتية\n\n` +
-      `📊 /summary - ملخص مالي\n📜 /transactions - العمليات\n💰 /budget - الميزانية\n🏷 /categories - التصنيفات\n📈 /compare - مقارنة الشهور\n🔒 /password - باسورد (اختياري)\n🗑 /delete - حذف عملية\n/help - مساعدة`
+      `📊 /summary - ملخص مالي\n📜 /transactions - العمليات\n💰 /budget - الميزانية\n🏷 /categories - التصنيفات\n📈 /compare - مقارنة الشهور\n🔒 /password - باسورد (اختياري)\n🗑 /delete - حذف عملية\n/help - مساعدة`,
+      { parse_mode: 'Markdown' }
     );
   });
 

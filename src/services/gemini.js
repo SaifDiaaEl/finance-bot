@@ -72,12 +72,32 @@ const systemInstruction = `
 
 ## صيغة الرد JSON (مطلوب بالظبط):
 {
-  "type": "expense" أو "income" أو "query" أو "unknown",
+  "type": "expense" أو "income" أو "query" أو "unknown" أو "debt_lend" أو "debt_borrow" أو "gameya" أو "purchase_advice" أو "settle_debt",
   "amount": رقم المبلغ (null لو مفيش مبلغ ذكر),
   "category": "أحد التصنيفات أعلاه",
   "description": "وصف مختصر بالعربي",
+  "personName": "اسم الشخص (مهم جداً للديون والجمعيات)",
   "replyMessage": "رسالة رد جميلة بالعربي تأكد تسجيل العملية أو تطلب توضيح"
 }
+
+## للديون (سلف وعليك):
+- "سلفت أحمد 500 جنيه" → type: "debt_lend", amount: 500, personName: "أحمد"
+- "سلفت لـ محمد 300" → type: "debt_lend", amount: 300, personName: "محمد"
+- "استلفت من سارة 1000" → type: "debt_borrow", amount: 1000, personName: "سارة"
+- "عليا لـ أحمد 200" → type: "debt_borrow", amount: 200, personName: "أحمد"
+- "حد سلفني 500 جنيه" → type: "debt_borrow", amount: 500
+- "أحمد رجعلي فلوسه" → type: "settle_debt", personName: "أحمد"
+- "دفعت لأحمد اللي عليا" → type: "settle_debt", personName: "أحمد"
+
+## للجمعيات:
+- "أنا في جمعية مع أحمد 500 شهري" → type: "gameya", amount: 500, personName: "أحمد"
+- "جمعيتي 1000 جنيه في الشهر" → type: "gameya", amount: 1000
+- ".collecting with ahmed 500/month" → type: "gameya", amount: 500, personName: "Ahmed"
+
+## للاستشارة الشراء:
+- "أشتري جاكيت بـ 1500 جنيه ولا لأ؟" → type: "purchase_advice", amount: 1500
+- "هل أشتري الموبايل ده؟" → type: "purchase_advice", amount: null
+- "عايز أشتري سماعة بـ 800" → type: "purchase_advice", amount: 800
 
 ## للاستعلام عن الرصيد:
 - "صرفت كام؟", "الميزانية كام؟", "باقي كام؟", "عملت إيه النهارده؟"

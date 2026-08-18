@@ -71,6 +71,22 @@ async function initDb() {
     )
   `);
 
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS debts (
+      id SERIAL PRIMARY KEY,
+      phone TEXT,
+      type TEXT CHECK(type IN ('lend', 'borrow', 'gameya')),
+      person_name TEXT NOT NULL,
+      amount REAL NOT NULL,
+      status TEXT CHECK(status IN ('pending', 'settled')) DEFAULT 'pending',
+      due_date TIMESTAMPTZ,
+      notes TEXT,
+      created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+      settled_at TIMESTAMPTZ,
+      FOREIGN KEY (phone) REFERENCES users(phone)
+    )
+  `);
+
   // Migrate legacy single-bot auth (unprefixed keys) into a named session
   const legacyAuth = await pool.query("SELECT count(*)::int AS c FROM whatsapp_auth WHERE key NOT LIKE '%/%'");
   if (legacyAuth.rows[0].c > 0) {
@@ -379,6 +395,120 @@ export async function getCategoryBreakdown(phone, months = 1) {
     total: Number(r.total),
     count: Number(r.count)
   }));
+}
+
+export async function addDebt(phone, { type, personName, amount, dueDate = null, notes = '' }) {
+  await getUser(phone);
+  const res = await pool.query(`
+    INSERT INTO debts (phone, type, person_name, amount, due_date, notes)
+    VALUES ($1, $2, $3, $4, $5, $6) RETURNING id
+  `, [phone, type, personName, amount, dueDate, notes]);
+  return res.rows[0].id;
+}
+
+export async function getDebts(phone, status = 'pending') {
+  const res = await pool.query(`
+    SELECT * FROM debts WHERE phone = $1 AND status = $2 ORDER BY created_at DESC
+  `, [phone, status]);
+  return res.rows;
+}
+
+export async function getDebtById(id, phone) {
+  const res = await pool.query('SELECT * FROM debts WHERE id = $1 AND phone = $2', [id, phone]);
+  return res.rows[0] || null;
+}
+
+export async function settleDebt(id, phone) {
+  const res = await pool.query(`
+    UPDATE debts SET status = 'settled', settled_at = NOW()
+    WHERE id = $1 AND phone = $2 AND status = 'pending'
+  `, [id, phone]);
+  return res.rowCount > 0;
+}
+
+export async function deleteDebt(id, phone) {
+  const res = await pool.query('DELETE FROM debts WHERE id = $1 AND phone = $2', [id, phone]);
+  return res.rowCount > 0;
+}
+
+export async function getDebtSummary(phone) {
+  const res = await pool.query(`
+    SELECT type, SUM(amount) as total, COUNT(*) as count
+    FROM debts WHERE phone = $1 AND status = 'pending'
+    GROUP BY type
+  `, [phone]);
+  const result = { lend: { total: 0, count: 0 }, borrow: { total: 0, count: 0 }, gameya: { total: 0, count: 0 } };
+  res.rows.forEach(r => {
+    result[r.type] = { total: Number(r.total), count: Number(r.count) };
+  });
+  return result;
+}
+
+export async function getDailyStats(phone) {
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+  const expensesRes = await pool.query(`
+    SELECT COALESCE(SUM(amount), 0) as total, COUNT(*) as count
+    FROM transactions WHERE phone = $1 AND type = 'expense' AND date >= $2
+  `, [phone, today]);
+
+  const incomeRes = await pool.query(`
+    SELECT COALESCE(SUM(amount), 0) as total
+    FROM transactions WHERE phone = $1 AND type = 'income' AND date >= $2
+  `, [phone, today]);
+
+  const topCatRes = await pool.query(`
+    SELECT category, SUM(amount) as total
+    FROM transactions WHERE phone = $1 AND type = 'expense' AND date >= $2
+    GROUP BY category ORDER BY total DESC LIMIT 3
+  `, [phone, today]);
+
+  return {
+    totalExpenses: Number(expensesRes.rows[0].total) || 0,
+    txCount: Number(expensesRes.rows[0].count) || 0,
+    totalIncome: Number(incomeRes.rows[0].total) || 0,
+    topCategories: topCatRes.rows.map(r => ({ category: r.category, total: Number(r.total) }))
+  };
+}
+
+export async function getPeriodStats(phone) {
+  const user = await getUser(phone);
+  const period = user.budget_period || 'monthly';
+  const startDate = getPeriodStart(period);
+  const now = new Date();
+  const startOfPeriod = new Date(startDate);
+  const totalDays = Math.max(1, Math.ceil((now - startOfPeriod) / (1000 * 60 * 60 * 24)));
+  const daysInPeriod = period === 'monthly' ? 30 : period === 'weekly' ? 7 : period === 'yearly' ? 365 : 1;
+  const daysRemaining = Math.max(0, daysInPeriod - totalDays);
+
+  const expensesRes = await pool.query(`
+    SELECT COALESCE(SUM(amount), 0) as total FROM transactions
+    WHERE phone = $1 AND type = 'expense' AND date >= $2
+  `, [phone, startDate]);
+
+  return {
+    budget: user.monthly_budget,
+    period,
+    daysElapsed: totalDays,
+    daysRemaining,
+    daysInPeriod,
+    totalExpenses: Number(expensesRes.rows[0].total) || 0,
+    dailyBurnRate: totalDays > 0 ? (Number(expensesRes.rows[0].total) || 0) / totalDays : 0,
+    projectedTotal: totalDays > 0 ? ((Number(expensesRes.rows[0].total) || 0) / totalDays) * daysInPeriod : 0
+  };
+}
+
+export async function getTransactionsForExport(phone, months = 1) {
+  const startDate = new Date();
+  startDate.setMonth(startDate.getMonth() - months);
+  const start = startDate.toISOString().split('T')[0];
+  const res = await pool.query(`
+    SELECT type, amount, category, description, date
+    FROM transactions WHERE phone = $1 AND date >= $2
+    ORDER BY date DESC
+  `, [phone, start]);
+  return res.rows;
 }
 
 export default pool;

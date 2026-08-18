@@ -1,7 +1,7 @@
 {
   "name": "whatsapp-finance-bot",
   "version": "1.0.0",
-  "description": "Smart WhatsApp Financial Assistant powered by Gemini AI and PostgreSQL with Web Dashboard",
+  "description": "tahweshabot - Smart Telegram Financial Assistant with AI, Debts, Daily Digest, Excel Export",
   "main": "src/index.js",
   "type": "module",
   "scripts": {

@@ -77,7 +77,7 @@
           دخول
         </button>
       </div>
-      <p id="loginError" class="text-red-400 text-sm mt-4 hidden">رقم غير صحيح أو巴斯ورد غلط</p>
+      <p id="loginError" class="text-red-400 text-sm mt-4 hidden">رقم غير صحيح أوباسورد غلط</p>
     </div>
   </div>
 
@@ -532,7 +532,7 @@
       if (!confirm('متأكد تحذف العملية دي؟')) return;
       try {
         const res = await fetch('/api/transactions/' + id + '?phone=' + encodeURIComponent(phone) + (password ? '&password=' + encodeURIComponent(password) : ''), { method: 'DELETE' });
-        if (res.status === 403) { alert('巴斯ورد غلط!'); return; }
+        if (res.status === 403) { alert('باسورد غلط!'); return; }
         loadData();
       } catch(e) { alert('فيه مشكلة حصلت'); }
     }

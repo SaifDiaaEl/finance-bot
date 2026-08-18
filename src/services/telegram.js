@@ -102,7 +102,7 @@ async function sendHelp(ctx) {
     `🗑 /delete — حذف عملية\n` +
     `ℹ️ /help — المساعدة\n\n` +
     `${SEP}\n\n` +
-    `💡 *مثال:* ابعت "مقبوضات 35 جنيه اكل"`\n``;
+    `💡 *مثال:* ابعت "مقبوضات 35 جنيه اكل"\n`;
 
   await ctx.reply(msg, { parse_mode: 'Markdown' });
 }
@@ -278,7 +278,7 @@ export function setupBotHandlers() {
     if (has) {
       pendingActions.set(id, { action: 'delete_tx', time: Date.now() });
       await ctx.reply(
-        `📊 *tahweshabot*\n\n🔒 *محتاج巴斯ورد*\nاكتب巴斯ورد عشان تقدر تحذف.`,
+        `📊 *tahweshabot*\n\n🔒 *محتاجباسورد*\nاكتبباسورد عشان تقدر تحذف.`,
         { parse_mode: 'Markdown' }
       );
       return;
@@ -419,7 +419,7 @@ export function setupBotHandlers() {
         const ok = await checkUserPassword(id, text);
         if (!ok) {
           await ctx.reply(
-            `📊 *tahweshabot*\n\n🔒 *巴斯ورد غلط*\nحاول تاني.`,
+            `📊 *tahweshabot*\n\n🔒 *باسورد غلط*\nحاول تاني.`,
             { parse_mode: 'Markdown' }
           );
           return;

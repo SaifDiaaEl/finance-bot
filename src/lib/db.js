@@ -98,9 +98,17 @@ async function initDb() {
     { name: 'فواتير واشتراكات', type: 'expense' },
     { name: 'ترفيه', type: 'expense' },
     { name: 'صحة', type: 'expense' },
+    { name: 'تعليم', type: 'expense' },
+    { name: 'سكن وأيجار', type: 'expense' },
+    { name: 'ملابس', type: 'expense' },
+    { name: 'هدايا', type: 'expense' },
+    { name: 'أولاد', type: 'expense' },
+    { name: 'حيوانات أليفة', type: 'expense' },
     { name: 'أخرى', type: 'expense' },
     { name: 'راتب', type: 'income' },
-    { name: 'دخل إضافي', type: 'income' }
+    { name: 'دخل إضافي', type: 'income' },
+    { name: 'هدية', type: 'income' },
+    { name: 'استرداد', type: 'income' }
   ];
 
   for (const cat of defaultCategories) {
@@ -335,6 +343,42 @@ export async function clearSessionAuth(prefix) {
 
 export async function cleanupOldProcessedMessages(hours = 24) {
   await pool.query('DELETE FROM processed_messages WHERE created_at < NOW() - ($1 || \' hours\')::interval', [hours]);
+}
+
+export async function getMonthlyComparison(phone) {
+  const res = await pool.query(`
+    SELECT
+      EXTRACT(MONTH FROM date) as month,
+      EXTRACT(YEAR FROM date) as year,
+      SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) as total_expenses,
+      SUM(CASE WHEN type = 'income' THEN amount ELSE 0 END) as total_income
+    FROM transactions WHERE phone = $1
+    GROUP BY EXTRACT(YEAR FROM date), EXTRACT(MONTH FROM date)
+    ORDER BY year DESC, month DESC
+    LIMIT 6
+  `, [phone]);
+  return res.rows.map(r => ({
+    month: Number(r.month),
+    year: Number(r.year),
+    totalExpenses: Number(r.total_expenses),
+    totalIncome: Number(r.total_income)
+  }));
+}
+
+export async function getCategoryBreakdown(phone, months = 1) {
+  const startDate = new Date();
+  startDate.setMonth(startDate.getMonth() - months);
+  const start = startDate.toISOString().split('T')[0];
+  const res = await pool.query(`
+    SELECT category, SUM(amount) as total, COUNT(*) as count
+    FROM transactions WHERE phone = $1 AND type = 'expense' AND date >= $2
+    GROUP BY category ORDER BY total DESC
+  `, [phone, start]);
+  return res.rows.map(r => ({
+    category: r.category,
+    total: Number(r.total),
+    count: Number(r.count)
+  }));
 }
 
 export default pool;

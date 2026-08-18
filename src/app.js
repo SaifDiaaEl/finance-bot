@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { getAllUsers, getFinancialSummary, getTransactions, updateUserBudget, deleteTransaction, addTransaction, deleteUser, hasPassword, checkUserPassword } from './lib/db.js';
+import { getAllUsers, getFinancialSummary, getTransactions, updateUserBudget, deleteTransaction, addTransaction, deleteUser, hasPassword, checkUserPassword, getMonthlyComparison, getCategoryBreakdown } from './lib/db.js';
 import { getTelegramBot, setupBotHandlers } from './services/telegram.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -136,6 +136,29 @@ app.delete('/api/users/:phone', async (req, res) => {
   try {
     const result = await deleteUser(phone);
     res.json({ success: result.userDeleted > 0, ...result });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/comparison', async (req, res) => {
+  const phone = req.query.phone;
+  if (!phone) return res.status(400).json({ error: 'User ID is required' });
+  try {
+    const comparison = await getMonthlyComparison(phone);
+    res.json(comparison);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/categories', async (req, res) => {
+  const phone = req.query.phone;
+  const months = parseInt(req.query.months) || 1;
+  if (!phone) return res.status(400).json({ error: 'User ID is required' });
+  try {
+    const categories = await getCategoryBreakdown(phone, months);
+    res.json(categories);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

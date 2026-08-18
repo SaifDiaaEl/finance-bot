@@ -1,5 +1,5 @@
 import { Bot } from 'grammy';
-import { getUser, addTransaction, getFinancialSummary, getTransactions, updateUserBudget, deleteTransaction, setUserPassword, checkUserPassword, hasPassword } from '../lib/db.js';
+import { getUser, addTransaction, getFinancialSummary, getTransactions, updateUserBudget, deleteTransaction, setUserPassword, checkUserPassword, hasPassword, getMonthlyComparison, getCategoryBreakdown } from '../lib/db.js';
 import { parseFinancialInput, parseReceiptImage, parseAudioVoice } from './gemini.js';
 
 let bot = null;
@@ -70,8 +70,8 @@ async function sendHelp(ctx) {
     `📥 *تسجيل دخل:* "قبضت 9000 جنيه"\n` +
     `📸 *فاتورة:* ابعت صورة\n` +
     `🎤 *فويس:* تكلّم بالعامية\n\n` +
-    `📊 /summary - ملخص مالي\n📜 /transactions - العمليات\n💰 /budget - الميزانية\n\n` +
-    `🔒 /password - تعين باسورد (اختياري)\n🗑 /delete - حذف عملية (محتاج巴斯ورد لو مظبوط)`,
+    `📊 /summary - ملخص مالي\n📜 /transactions - العمليات\n💰 /budget - الميزانية\n🏷 /categories - التصنيفات\n📈 /compare - مقارنة الشهور\n\n` +
+    `🔒 /password - تعين باسورد (اختياري)\n🗑 /delete - حذف عملية`,
     { parse_mode: 'Markdown' }
   );
 }
@@ -156,7 +156,7 @@ export function setupBotHandlers() {
       `📥 "قبضت راتبي 9000 جنيه"\n` +
       `📸 ابعت صورة فاتورة\n` +
       `🎤 ابعت رسالة صوتية\n\n` +
-      `📊 /summary - ملخص مالي\n📜 /transactions - العمليات\n💰 /budget - الميزانية\n🔒 /password - باسورد (اختياري)\n🗑 /delete - حذف عملية\n/help - مساعدة`
+      `📊 /summary - ملخص مالي\n📜 /transactions - العمليات\n💰 /budget - الميزانية\n🏷 /categories - التصنيفات\n📈 /compare - مقارنة الشهور\n🔒 /password - باسورد (اختياري)\n🗑 /delete - حذف عملية\n/help - مساعدة`
     );
   });
 
@@ -201,6 +201,50 @@ export function setupBotHandlers() {
     });
     pendingActions.set(id, { action: 'delete_tx_pick', txs, time: Date.now() });
     await ctx.reply(text);
+  });
+
+  b.command('categories', async (ctx) => {
+    const id = uid(ctx);
+    await getUser(id);
+    try {
+      const cats = await getCategoryBreakdown(id, 1);
+      if (cats.length === 0) { await ctx.reply('📊 مفيش مصروفات الشهر ده.'); return; }
+      let msg = '📊 *تصنيفات المصروفات الشهر ده:*\n\n';
+      const total = cats.reduce((s, c) => s + c.total, 0);
+      cats.forEach(c => {
+        const pct = Math.round(c.total / total * 100);
+        const bar = '█'.repeat(Math.round(pct / 10)) + '░'.repeat(10 - Math.round(pct / 10));
+        msg += `*${c.category}*: ${c.total} ج (${pct}%)\n\`${bar}\`\n`;
+      });
+      msg += `\n💰 الإجمالي: *${total} جنيه*`;
+      await ctx.reply(msg, { parse_mode: 'Markdown' });
+    } catch (e) {
+      await ctx.reply('❌ حصلت مشكلة.');
+    }
+  });
+
+  b.command('compare', async (ctx) => {
+    const id = uid(ctx);
+    await getUser(id);
+    try {
+      const data = await getMonthlyComparison(id);
+      if (data.length === 0) { await ctx.reply('📊 مفيش بيانات كافية للمقارنة.'); return; }
+      const months = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+      let msg = '📈 *مقارنة شهور:*\n\n';
+      data.forEach(d => {
+        msg += `*${months[d.month - 1]}*: 📤 ${d.totalExpenses} ج | 📥 ${d.totalIncome} ج\n`;
+      });
+      if (data.length >= 2) {
+        const diff = data[0].totalExpenses - data[1].totalExpenses;
+        const pct = Math.round(diff / data[1].totalExpenses * 100);
+        msg += diff > 0
+          ? `\n⚠️ صرفت ${diff} جنيه (${pct}%) أكتر من الشهر اللي فات`
+          : `\n✅ وفّرت ${Math.abs(diff)} جنيه (${Math.abs(pct)}%) عن الشهر اللي فات`;
+      }
+      await ctx.reply(msg, { parse_mode: 'Markdown' });
+    } catch (e) {
+      await ctx.reply('❌ حصلت مشكلة.');
+    }
   });
 
   b.on('message:photo', async (ctx) => {
